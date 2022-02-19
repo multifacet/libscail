@@ -1,0 +1,13 @@
+[package]
+name = "runner-proc-macro"
+version = "0.1.0"
+authors = ["mark <markm@cs.wisc.edu>"]
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "1.0.17", features = ["derive"] }
+quote = "1.0.3"
+proc-macro2 = "1.0"
