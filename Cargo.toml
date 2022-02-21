@@ -1,5 +1,5 @@
 [package]
-name = "experiment_lib"
+name = "libscail"
 version = "0.1.0"
 edition = "2021"
 authors = ["Mark Mansi <markm@cs.wisc.edu>", "Bijan Tabatabai <btabatabai@wisc.edu>"]
