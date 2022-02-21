@@ -23,7 +23,7 @@ use std::process::Command;
 
 use failure::ResultExt;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use spurs::{cmd, Execute, SshShell};
 
@@ -84,7 +84,7 @@ impl GitRepo<'_, '_> {
         };
 
         // We want the string after the last "/" in the url
-        let split = repo.split("/").collect::<Vec<&str>>();
+        let split = repo.split('/').collect::<Vec<&str>>();
         let name = split[split.len() - 1];
         let len = name.len();
 
@@ -175,7 +175,7 @@ pub fn clone_git_repo(
     let branch_name = branch.unwrap_or("master");
 
     // Check if the repo is already cloned.
-    if let Ok(_hash) = get_git_hash(&ushell, dir_name) {
+    if let Ok(_hash) = get_git_hash(ushell, dir_name) {
         // If so, just update it.
         with_shell! { ushell in &dir!(dir_name) =>
             cmd!("git fetch"),

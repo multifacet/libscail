@@ -130,7 +130,7 @@ pub trait Parametrize: Serialize + Deserialize<'static> {
         // prepend all important settings
         for (i, (setting, value)) in self.important().iter().enumerate() {
             if i > 0 {
-                base.push_str("-");
+                base.push('-');
             }
             append_setting(&mut base, setting, value);
         }
@@ -139,10 +139,10 @@ pub trait Parametrize: Serialize + Deserialize<'static> {
         base.truncate(MAX_FILENAME_LEN);
 
         // append the date
-        base.push_str("-");
+        base.push('-');
         base.push_str(&self.timestamp().0);
 
-        base.push_str(".");
+        base.push('.');
         base.push_str(ext);
 
         base
