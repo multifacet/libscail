@@ -18,6 +18,8 @@ pub mod background;
 pub mod cpu;
 pub mod downloads;
 
+use crate::downloads::download_and_extract;
+
 use std::path::Path;
 use std::process::Command;
 
@@ -958,6 +960,44 @@ pub fn centos_install_bcc(shell: &SshShell) -> Result<(), spurs::SshError> {
     shell.run(cmd!("{}; cmake3 ..", enable).cwd("bcc/build"))?;
     shell.run(cmd!("{}; make", enable).cwd("bcc/build"))?;
     shell.run(cmd!("{}; sudo make install", enable).cwd("bcc/build"))?;
+
+    Ok(())
+}
+
+/// Install jemalloc as the system directory.
+pub fn install_jemalloc(shell: &SshShell) -> Result<(), failure::Error> {
+    // Download jemalloc.
+    let user_home = &get_user_home_dir(&shell)?;
+    download_and_extract(shell, downloads::JEMALLOC, user_home, Some("jemalloc"))?;
+
+    // Build and install.
+    with_shell! { shell in &dir!(user_home, "jemalloc") =>
+        cmd!("./autogen.sh"),
+        cmd!("make -j"),
+        cmd!("sudo make install"),
+        cmd!("sudo touch /etc/ld.so.preload"),
+    }
+
+    // Set as the system allocator.
+    shell.run(cmd!(
+        "echo \" `jemalloc-config --libdir`/libjemalloc.so.`jemalloc-config --revision` \" \
+         | sudo tee -a /etc/ld.so.preload",
+    ))?;
+    shell.run(cmd!("sudo ldconfig"))?;
+
+    Ok(())
+}
+
+/// Install rust in the home directory of the given shell (can be guest or host).
+pub fn install_rust(shell: &SshShell) -> Result<(), failure::Error> {
+    shell.run(
+        cmd!(
+            "curl https://sh.rustup.rs -sSf | \
+             sh -s -- --default-toolchain nightly --no-modify-path -y"
+        )
+        .use_bash()
+        .no_pty(),
+    )?;
 
     Ok(())
 }
