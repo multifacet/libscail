@@ -32,7 +32,7 @@ pub const KYOTO_CABINET_CORE: Download = Download {
 };
 pub const KYOTO_CABINET_JAVA: Download = Download {
     url: "https://dbmx.net/kyotocabinet/javapkg/kyotocabinet-java-1.24.tar.gz",
-    name:"kyotocabinet-java-1.24.tar.gz",
+    name: "kyotocabinet-java-1.24.tar.gz",
 };
 pub const PARSEC: Download = Download {
     url: "https://parsec.cs.princeton.edu/download/3.0/parsec-3.0.tar.gz",
@@ -46,19 +46,25 @@ pub const JEMALLOC: Download = Download {
 /// Use `shell` to download the artifact to the directory `to` only if the tarball doesn't already
 /// exist. Then, rename the tarball to `name` if any name is given. Returns the `Download` with
 /// artifact info, including the original name of the download.
-pub fn download(shell: &SshShell, info: &Download, to: &str) -> Result<(), failure::Error> {
+pub fn download(
+    shell: &SshShell,
+    info: &Download,
+    to: &str,
+    name: Option<&str>,
+) -> Result<(), failure::Error> {
     // Some websites reject non-browsers, so pretend to be Google Chrome.
     const USER_AGENT: &str = r#"--user-agent="Mozilla/5.0 \
                              (X11; Ubuntu; Linux x86_64; rv:92.0) \
                              Gecko/20100101 Firefox/92.0""#;
+    let name = name.unwrap_or(info.name);
 
     // Check if the file exists and then maybe download.
     shell.run(
         cmd!(
             "[ -e {} ] || wget {} -O {} {}",
-            info.name,
+            name,
             USER_AGENT,
-            info.name,
+            name,
             info.url
         )
         .cwd(to),
@@ -73,11 +79,17 @@ pub fn download_and_extract(
     shell: &SshShell,
     info: Download,
     to: &str,
+    name: Option<&str>,
 ) -> Result<(), failure::Error> {
     // Download, keep the original name.
-    download(shell, &info, to)?;
+    download(shell, &info, to, None)?;
 
-    shell.run(cmd!("tar -xvf {}", info.name).cwd(to))?;
+    if let Some(name) = name {
+        shell.run(cmd!("mkdir -p {}", name).cwd(to))?;
+        shell.run(cmd!("tar -C {} --strip-components=1 -xvf {}", name, info.name).cwd(to))?;
+    } else {
+        shell.run(cmd!("tar -xvf {}", info.name).cwd(to))?;
+    }
 
     Ok(())
 }
