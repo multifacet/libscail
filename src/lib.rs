@@ -844,9 +844,9 @@ pub fn resize_root_partition(shell: &SshShell) -> Result<(), failure::Error> {
             }
         })
         .collect();
-    let root_new_size: usize = to_delete
+    let root_new_size: usize = old_partitions
         .iter()
-        .map(|part| old_partitions.get(*part).unwrap().1)
+        .map(|(_name, (_start, size))| size)
         .sum();
 
     // Delete the partitions we want to get rid of (but not actually yet).
