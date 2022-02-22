@@ -1043,6 +1043,7 @@ pub fn install_spec_2017<A>(
     ushell: &SshShell,
     login: &Login<A>,
     iso_path: &str,
+    config_path: &str,
     install_path: &str,
 ) -> Result<(), failure::Error>
 where
@@ -1054,7 +1055,6 @@ where
     } else {
         failure::bail!("SPEC ISO is not a file name: {}", iso_path);
     };
-    const SPEC_2017_CONF: &str = "spec-linux-x86.cfg";
 
     // Copy the ISO to the remote machine.
     let user_home = &get_user_home_dir(&ushell)?;
@@ -1078,18 +1078,18 @@ where
     // Copy the SPEC config to the installation and build the benchmarks.
     //
     // NOTE: this only installs SPEC INT SPEED 2017.
-    ushell.run(cmd!("cp {} config/", SPEC_2017_CONF).cwd(&spec_dir))?;
+    ushell.run(cmd!("cp {} config/", config_path).cwd(&spec_dir))?;
     ushell.run(
         cmd!(
             "source shrc && runcpu --config={} --fake intspeed",
-            SPEC_2017_CONF
+            config_path
         )
         .cwd(&spec_dir),
     )?;
     ushell.run(
         cmd!(
             "source shrc && runcpu --config={} --action=build intspeed",
-            SPEC_2017_CONF
+            config_path
         )
         .cwd(&spec_dir),
     )?;
