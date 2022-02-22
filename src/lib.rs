@@ -21,6 +21,7 @@ pub mod downloads;
 use crate::downloads::download_and_extract;
 
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::Command;
 
 use failure::ResultExt;
@@ -998,6 +999,97 @@ pub fn install_rust(shell: &SshShell) -> Result<(), failure::Error> {
         .use_bash()
         .no_pty(),
     )?;
+
+    Ok(())
+}
+
+/// Install SPEC 2017 on the remote host machine. The installed benchmarks are not available to
+/// the guest.
+///
+/// Because SPEC is not free and requires a license, we can't just download it from the internet
+/// somewhere. Instead, the user must provide us with a copy to install by pointing us to an ISO
+/// on the driver machine somewhere.
+pub fn install_spec_2017<A>(
+    ushell: &SshShell,
+    login: &Login<A>,
+    iso_path: &str,
+    install_path: &str,
+) -> Result<(), failure::Error>
+where
+    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
+{
+    let iso_fname = PathBuf::from(iso_path);
+    let iso_fname = if let Some(iso_fname) = iso_fname.file_name().and_then(|f| f.to_str()) {
+        iso_fname
+    } else {
+        failure::bail!("SPEC ISO is not a file name: {}", iso_path);
+    };
+    const SPEC_2017_CONF: &str = "spec-linux-x86.cfg";
+
+    // Copy the ISO to the remote machine.
+    let user_home = &get_user_home_dir(&ushell)?;
+    rsync_to_remote(login, iso_path, user_home)?;
+
+    // Mount the ISO and execute the install script.
+    const TMP_ISO_MOUNT: &str = "/tmp/spec_mnt";
+    ushell.run(cmd!("sudo umount {}", TMP_ISO_MOUNT).allow_error())?;
+    ushell.run(cmd!("mkdir -p {}", TMP_ISO_MOUNT))?;
+    ushell.run(cmd!(
+        "sudo mount -o loop {}/{} {}",
+        user_home,
+        iso_fname,
+        TMP_ISO_MOUNT
+    ))?;
+
+    // Execute the installation script.
+    let spec_dir = dir!(user_home, install_path);
+    ushell.run(cmd!("./install.sh -f -d {}", spec_dir).cwd(TMP_ISO_MOUNT))?;
+
+    // Copy the SPEC config to the installation and build the benchmarks.
+    //
+    // NOTE: this only installs SPEC INT SPEED 2017.
+    ushell.run(cmd!("cp {} config/", SPEC_2017_CONF).cwd(&spec_dir))?;
+    ushell.run(
+        cmd!(
+            "source shrc && runcpu --config={} --fake intspeed",
+            SPEC_2017_CONF
+        )
+        .cwd(&spec_dir),
+    )?;
+    ushell.run(
+        cmd!(
+            "source shrc && runcpu --config={} --action=build intspeed",
+            SPEC_2017_CONF
+        )
+        .cwd(&spec_dir),
+    )?;
+
+    const SPEC_WORKLOADS: &[&str] = &[
+        "perlbench_s",
+        // FIXME: For gcc alone, the binary name is `sgcc` instead of `gcc_s`?! So we just exclude
+        // it. A more thorough script would look at the runcpu log and figure out the appropriate
+        // name.
+        // "gcc_s",
+        "xalancbmk_s",
+        "x264_s",
+        "deepsjeng_s",
+        "leela_s",
+        "exchange2_s",
+        "xz_s",
+        "mcf_s",
+        "specrand_is",
+    ];
+
+    for bmk in SPEC_WORKLOADS.iter() {
+        ushell.run(
+            cmd!(
+                "cp benchspec/CPU/*{bmk}/build/build_base_markm-thp-m64.0000/{bmk} \
+                benchspec/CPU/*{bmk}/run/run_base_refspeed_markm-thp-m64.0000/",
+                bmk = bmk,
+            )
+            .cwd(&spec_dir),
+        )?;
+    }
 
     Ok(())
 }
