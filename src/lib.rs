@@ -26,7 +26,7 @@ use std::process::Command;
 
 use failure::ResultExt;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use spurs::{cmd, Execute, SshShell};
 
@@ -249,6 +249,36 @@ pub fn get_user_home_dir(ushell: &SshShell) -> Result<String, failure::Error> {
     } else {
         Ok(user_home)
     }
+}
+
+/// There are some settings that are per-machine, rather than per-experiment (e.g. which devices to
+/// turn on as swap devices). We keep these settings in a per-machine file called
+/// `research-settings.json`, which is generated at the time of the setup.
+///
+/// This function sets the given setting or overwrites its current value.
+pub fn set_remote_research_setting<V: Serialize>(
+    ushell: &SshShell,
+    setting: &str,
+    value: V,
+) -> Result<(), failure::Error> {
+    // Make sure the file exists
+    ushell.run(cmd!("touch research-settings.json"))?;
+
+    // We don't care too much about efficiency, so whenever we update, we will just read,
+    // deserialize, update, and reserialize.
+    let mut settings = get_remote_research_settings(ushell)?;
+
+    let serialized = serde_json::to_string(&value).expect("unable to serialize");
+    settings.insert(setting.into(), serialized);
+
+    let new_contents = serde_json::to_string(&settings).expect("unable to serialize");
+
+    ushell.run(cmd!(
+        "echo {} > research-settings.json",
+        spurs_util::escape_for_bash(&new_contents)
+    ))?;
+
+    Ok(())
 }
 
 /// Return all research settings. The user can then use `get_remote_research_setting` to parse out
