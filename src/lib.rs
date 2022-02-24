@@ -595,8 +595,13 @@ pub fn build_kernel(
         }
     }
 
-    ushell.run(cmd!(r#"sed -i 's/CONFIG_SYSTEM_TRUSTED_KEYS=".*"/CONFIG_SYSTEM_TRUSTED_KEYS=""/' .config"#))?;
-    ushell.run(cmd!(r#"sed -i 's/CONFIG_SYSTEM_REVOCATION_KEYS=".*"/CONFIG_SYSTEM_REVOCATION_KEYS=""/' .config"#))?;
+    ushell.run(
+        cmd!(
+            r#"sed -i 's/CONFIG_SYSTEM_TRUSTED_KEYS=".*"/CONFIG_SYSTEM_TRUSTED_KEYS=""/' .config"#
+        )
+        .cwd(kbuild_path),
+    )?;
+    ushell.run(cmd!(r#"sed -i 's/CONFIG_SYSTEM_REVOCATION_KEYS=".*"/CONFIG_SYSTEM_REVOCATION_KEYS=""/' .config"#).cwd(kbuild_path))?;
     for (opt, set) in config.extra_options.iter() {
         if *set {
             ushell.run(cmd!(
