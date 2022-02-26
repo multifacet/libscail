@@ -30,6 +30,21 @@ use serde::{Deserialize, Serialize};
 
 use spurs::{cmd, Execute, SshShell};
 
+/// Validators for different CLI options.
+pub mod validator {
+    /// Validates that the argument is of type `T` that can be parsed from a string.
+    pub fn is<T>(s: String) -> Result<(), String>
+    where
+        T: std::str::FromStr,
+        <T as std::str::FromStr>::Err: std::fmt::Debug,
+    {
+        s.as_str()
+            .parse::<T>()
+            .map(|_| ())
+            .map_err(|e| format!("{:?}", e))
+    }
+}
+
 /// A git repository.
 #[derive(Clone, Debug)]
 pub enum GitRepo<'a, 's> {
