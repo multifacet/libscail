@@ -2,8 +2,6 @@
 
 use std::time::Instant;
 
-use bitflags::bitflags;
-
 use super::{get_user_home_dir, oomkiller_blacklist_by_name};
 
 use serde::{Deserialize, Serialize};
@@ -798,7 +796,7 @@ pub fn run_spec17(
                         5ad2c04fbc447549c2810fae -1 -1 4",
                     size
                 )
-            }
+            };
 
             (cmd, "xz_s")
         },
@@ -856,12 +854,12 @@ pub fn run_spec17(
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub enum CannealWorkload {
+pub enum CannealWorkload<'a> {
     Small,
     Medium,
     Large,
     Native,
-    Custom { input: String },
+    Custom { input: &'a str },
 }
 
 pub fn run_canneal(
@@ -875,11 +873,10 @@ pub fn run_canneal(
 ) -> Result<(), failure::Error> {
     let canneal_path = format!("{}/pkgs/kernels/canneal/inst/amd64-linux.gcc/bin/", parsec_path);
     let net_path = format!("{}/pkgs/kernels/canneal/inputs/", parsec_path);
-    const CANNEAL_CMD: &str = "./canneal 1 15000 2000 input.nets 6000";
 
     // Extract the input file
     let input_file = if let CannealWorkload::Custom { input } = workload {
-        input
+        input.to_string()
     } else {
         let input_file = match workload {
             CannealWorkload::Small => "input_simsmall.tar",
@@ -888,10 +885,10 @@ pub fn run_canneal(
             CannealWorkload::Native => "input_native.tar",
             _ => "error",
         };
-        shell.run(cmd!("tar -xvf {}", input_file).cwd(net_path))?;
-        shell.run(cmd!("mv *.nets input.nets").cwd(net_path))?;
-        format!("{}/input.nets", NET_PATH);
-    }
+        shell.run(cmd!("tar -xvf {}", input_file).cwd(&net_path))?;
+        shell.run(cmd!("mv *.nets input.nets").cwd(&net_path))?;
+        format!("{}/input.nets", &net_path)
+    };
 
     let cmd = format!("./canneal 1 15000 2000 {} 6000", input_file);
 

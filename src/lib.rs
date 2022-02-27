@@ -17,6 +17,7 @@ pub mod output;
 pub mod background;
 pub mod cpu;
 pub mod downloads;
+pub mod workloads;
 
 use crate::downloads::download_and_extract;
 
