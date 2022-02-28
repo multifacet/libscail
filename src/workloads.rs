@@ -765,7 +765,7 @@ pub enum Spec2017Workload {
 }
 
 pub fn run_spec17(
-    shell: SshShell,
+    shell: &SshShell,
     spec_dir: &str,
     workload: Spec2017Workload,
     input: Option<&str>,
