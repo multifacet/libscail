@@ -854,12 +854,12 @@ pub fn run_spec17(
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub enum CannealWorkload<'a> {
+pub enum CannealWorkload {
     Small,
     Medium,
     Large,
     Native,
-    Custom { input: &'a str },
+    Custom,
 }
 
 pub fn run_canneal(
@@ -868,6 +868,7 @@ pub fn run_canneal(
     workload: CannealWorkload,
     cmd_prefix: Option<&str>,
     perf_file: Option<&str>,
+    input_file: Option<&str>,
     runtime_file: &str,
     pin_core: usize,
 ) -> Result<(), failure::Error> {
@@ -875,8 +876,8 @@ pub fn run_canneal(
     let net_path = format!("{}/pkgs/kernels/canneal/inputs/", parsec_path);
 
     // Extract the input file
-    let input_file = if let CannealWorkload::Custom { input } = workload {
-        input.to_string()
+    let input_file = if let CannealWorkload::Custom = workload {
+        input_file.unwrap().to_string()
     } else {
         let input_file = match workload {
             CannealWorkload::Small => "input_simsmall.tar",
