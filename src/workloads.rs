@@ -770,7 +770,6 @@ pub fn run_spec17(
     workload: Spec2017Workload,
     input: Option<&str>,
     cmd_prefix: Option<&str>,
-    perf_file: Option<&str>,
     runtime_file: &str,
     // The spec workloads default to 4 threads, so we require 4 cores.
     pin_cores: [usize; 4],
@@ -819,32 +818,15 @@ pub fn run_spec17(
 
     let start = Instant::now();
 
-    if let Some(perf_file) = perf_file {
-        // TODO: not tested, should this be done sort of like thp_ubmk above?
-        shell.run(
-            cmd!(
-                "sudo perf record -a -C {} -g -F 99 \
-                 taskset -c {} {} {} && \
-                 sudo perf report --stdio > {}",
-                pin_cores,
-                pin_cores,
-                cmd_prefix.unwrap_or(""),
-                cmd,
-                perf_file,
-            )
-            .cwd(bmk_dir),
-        )?;
-    } else {
-        shell.run(
-            cmd!(
-                "sudo taskset -c {} {} {}",
-                pin_cores,
-                cmd_prefix.unwrap_or(""),
-                cmd,
-            )
-            .cwd(bmk_dir),
-        )?;
-    }
+    shell.run(
+        cmd!(
+            "sudo taskset -c {} {} {}",
+            pin_cores,
+            cmd_prefix.unwrap_or(""),
+            cmd,
+        )
+        .cwd(bmk_dir),
+    )?;
 
     // Output the workload runtime in ms as measure of workload performance.
     let duration = Instant::now() - start;
@@ -867,7 +849,6 @@ pub fn run_canneal(
     parsec_path: &str,
     workload: CannealWorkload,
     cmd_prefix: Option<&str>,
-    perf_file: Option<&str>,
     input_file: Option<&str>,
     runtime_file: &str,
     pin_core: usize,
@@ -895,31 +876,15 @@ pub fn run_canneal(
 
     let start = Instant::now();
 
-    if let Some(perf_file) = perf_file {
-        shell.run(
-            cmd!(
-                "sudo perf record -a -C {} -g -F 99 \
-                taskset -c {} {} {} && \
-                sudo perf report --stdio > {}",
-                pin_core,
-                pin_core,
-                cmd_prefix.unwrap_or(""),
-                cmd,
-                perf_file,
-            )
-            .cwd(canneal_path),
-        )?;
-    } else {
-        shell.run(
-            cmd!(
-                "sudo taskset -c {} {} {}",
-                pin_core,
-                cmd_prefix.unwrap_or(""),
-                cmd
-            )
-            .cwd(canneal_path),
-        )?;
-    }
+    shell.run(
+        cmd!(
+            "sudo taskset -c {} {} {}",
+            pin_core,
+            cmd_prefix.unwrap_or(""),
+            cmd
+        )
+        .cwd(canneal_path),
+    )?;
 
     // Output the workload runtime in ms as measure of workload performance.
     let duration = Instant::now() - start;
