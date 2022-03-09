@@ -772,7 +772,7 @@ pub fn run_spec17(
     cmd_prefix: Option<&str>,
     runtime_file: &str,
     // The spec workloads default to 4 threads, so we require 4 cores.
-    pin_cores: [usize; 4],
+    pin_cores: Vec<usize>,
 ) -> Result<(), failure::Error> {
     let (cmd, bmk) = match workload {
         Spec2017Workload::Mcf => {
