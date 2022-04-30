@@ -162,7 +162,7 @@ where
     ))?;
 
     // Wait for memcached to start by using `memcached-tool` until we are able to connect.
-    while let Err(..) = shell.run(cmd!("memcached-tool localhost:11211")) {}
+    while let Err(..) = shell.run(cmd!("{}/scripts/memcached-tool localhost:11211", cfg.memcached)) {}
 
     // Don't let memcached get OOM killed.
     oomkiller_blacklist_by_name(shell, "memcached")?;
@@ -592,7 +592,7 @@ where
 
                 with_shell! { shell in &self.cfg.ycsb_path =>
                     cmd!("./bin/ycsb load memcached -s -P {} {}", workload_file, self.flags.join(" ")),
-                    cmd!("memcached-tool localhost:11211"),
+                    cmd!("{}/scripts/memcached-tool localhost:11211", cfg_memcached.memcached),
                 }
             }
 
