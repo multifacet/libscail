@@ -150,8 +150,8 @@ where
         None => "".into(),
     };
 
-    shell.run(cmd!(
-        "{}{}{} {}/memcached {} -m {} -d -u {} -f 1.11 -v",
+    shell.spawn(cmd!(
+        "{}{}{} {}/memcached {} -m {} -u {} -f 1.11 -v",
         pintool,
         taskset,
         cfg.cmd_prefix.unwrap_or(""),
