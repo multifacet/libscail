@@ -89,6 +89,8 @@ where
     pub server_size_mb: usize,
     /// Specifies whether the memcached server is allowed to OOM.
     pub allow_oom: bool,
+    /// Specifies if memcached should use hugepages
+    pub hugepages: bool,
 
     /// The core number that the memcached server is pinned to, if any.
     pub server_pin_core: Option<usize>,
@@ -151,12 +153,13 @@ where
     };
 
     shell.spawn(cmd!(
-        "{}{}{} {}/memcached {} -m {} -u {} -f 1.11 -v",
+        "{}{}{} {}/memcached {} {} -m {} -u {} -f 1.11 -v",
         pintool,
         taskset,
         cfg.cmd_prefix.unwrap_or(""),
         cfg.memcached,
         if cfg.allow_oom { "-M" } else { "" },
+        if cfg.hugepages { "-L" } else { "" },
         cfg.server_size_mb,
         cfg.user
     ))?;
