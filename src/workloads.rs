@@ -420,6 +420,14 @@ pub fn run_metis_matrix_mult(
     )
 }
 
+/// What distribution the YCSB workload should use to choose items
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub enum YcsbDistribution {
+    Zipfian,
+    Uniform,
+    Latest,
+}
+
 /// Which YCSB core workload to run.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum YcsbWorkload {
@@ -434,6 +442,8 @@ pub enum YcsbWorkload {
         record_count: usize,
         /// The number of operations to perform in the workload
         op_count: usize,
+        /// The distribution of requests across the keyspace to use
+        distribution: YcsbDistribution,
         /// The proportion of reads for the workload to perform
         read_prop: f32,
         /// The proportion of updates for the workload to perform
@@ -525,11 +535,18 @@ where
         if let YcsbWorkload::Custom {
             record_count,
             op_count,
+            distribution,
             read_prop,
             update_prop,
             insert_prop,
         } = self.cfg.workload
         {
+            let dist = match distribution {
+                YcsbDistribution::Zipfian => "zipfian",
+                YcsbDistribution::Uniform => "uniform",
+                YcsbDistribution::Latest => "latest",
+            };
+
             shell.run(cmd!(
                 "echo \"recordcount={}\" > {}",
                 record_count,
@@ -562,7 +579,8 @@ where
                 ycsb_wkld_file
             ))?;
             shell.run(cmd!(
-                "echo \"requestdistribution=zipfian\" >> {}",
+                "echo \"requestdistribution={}\" >> {}",
+                dist,
                 ycsb_wkld_file
             ))?;
         }
