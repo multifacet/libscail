@@ -38,7 +38,7 @@ pub enum IntelX86Model {
     KabyLakeConsumer,
 }
 
-pub fn cpu_family_number(ushell: &SshShell) -> Result<usize, failure::Error> {
+pub fn cpu_family_number(ushell: &SshShell) -> Result<usize, anyhow::Error> {
     Ok(ushell
         .run(cmd!(r#"lscpu | grep 'CPU family' | awk '{{print $3}}'"#))?
         .stdout
@@ -46,7 +46,7 @@ pub fn cpu_family_number(ushell: &SshShell) -> Result<usize, failure::Error> {
         .parse::<usize>()?)
 }
 
-pub fn cpu_model_number(ushell: &SshShell) -> Result<usize, failure::Error> {
+pub fn cpu_model_number(ushell: &SshShell) -> Result<usize, anyhow::Error> {
     Ok(ushell
         .run(cmd!(r#"lscpu | grep 'Model:' | awk '{{print $2}}'"#))?
         .stdout
@@ -54,7 +54,7 @@ pub fn cpu_model_number(ushell: &SshShell) -> Result<usize, failure::Error> {
         .parse::<usize>()?)
 }
 
-pub fn cpu_family_model(ushell: &SshShell) -> Result<Processor, failure::Error> {
+pub fn cpu_family_model(ushell: &SshShell) -> Result<Processor, anyhow::Error> {
     use IntelX86Model::*;
 
     let family = cpu_family_number(ushell)?;
@@ -77,12 +77,12 @@ pub fn cpu_family_model(ushell: &SshShell) -> Result<Processor, failure::Error> 
             0x9E | 0x8E => KabyLakeConsumer,
 
             _ => {
-                failure::bail!("Unknown processor: family={} model={}", family, model);
+                anyhow::bail!("Unknown processor: family={} model={}", family, model);
             }
         }),
 
         (family, model) => {
-            failure::bail!("Unknown processor: family={} model={}", family, model);
+            anyhow::bail!("Unknown processor: family={} model={}", family, model);
         }
     })
 }
@@ -93,7 +93,7 @@ pub fn cpu_family_model(ushell: &SshShell) -> Result<Processor, failure::Error> 
 ///
 /// This function checks which it is and returns either `Ok("walk_duration")` or
 /// `Ok("walk_active")`.
-pub fn page_walk_perf_counter_suffix(shell: &SshShell) -> Result<String, failure::Error> {
+pub fn page_walk_perf_counter_suffix(shell: &SshShell) -> Result<String, anyhow::Error> {
     let output = shell
         .run(cmd!(
             "(sudo perf list | grep -o walk_active > /tmp/x && cat /tmp/x | uniq) || echo walk_duration"
