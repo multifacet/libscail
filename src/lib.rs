@@ -25,8 +25,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 
-use failure::ResultExt;
-
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 use spurs::{cmd, Execute, SshShell};
@@ -139,7 +138,7 @@ pub fn timings_str(timings: &[(&str, std::time::Duration)]) -> String {
 /// Copy the given directory or files from this machine to the given remote at the given location.
 /// This uses rsync via SSH to copy with compression, which often leads to significant speedups.
 /// However, it will fail if the remote is not in known_hosts.
-pub fn rsync_to_remote<A, P>(login: &Login<A>, from: P, to: P) -> Result<(), failure::Error>
+pub fn rsync_to_remote<A, P>(login: &Login<A>, from: P, to: P) -> Result<(), anyhow::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
     P: AsRef<Path>,
@@ -166,7 +165,7 @@ where
 
     // If failure, exit with an Err(..).
     if !status.success() {
-        failure::bail!("rsync failed. Exit code: {:?}", status.code());
+        anyhow::bail!("rsync failed. Exit code: {:?}", status.code());
     }
 
     Ok(())
@@ -188,7 +187,7 @@ pub fn clone_git_repo(
     branch: Option<&str>,
     secret: Option<&str>,
     submodules: &[&str],
-) -> Result<String, failure::Error> {
+) -> Result<String, anyhow::Error> {
     let default_name = repo.git_repo_default_name();
     let dir_name = dir_name.unwrap_or(&default_name);
     let branch_name = branch.unwrap_or("master");
@@ -223,7 +222,7 @@ pub fn clone_git_repo(
 }
 
 /// Get the git hash of the remote research workspace.
-pub fn get_git_hash(ushell: &SshShell, name: &str) -> Result<String, failure::Error> {
+pub fn get_git_hash(ushell: &SshShell, name: &str) -> Result<String, anyhow::Error> {
     let hash = ushell.run(cmd!("git rev-parse HEAD").cwd(name))?;
     let hash = hash.stdout.trim();
 
@@ -232,7 +231,7 @@ pub fn get_git_hash(ushell: &SshShell, name: &str) -> Result<String, failure::Er
 
 /// Get the git hash of the local research workspace, specifically the workspace from which the
 /// runner is run. Returns `"dirty"` if the workspace has uncommitted changes.
-pub fn local_research_workspace_git_hash() -> Result<String, failure::Error> {
+pub fn local_research_workspace_git_hash() -> Result<String, anyhow::Error> {
     let is_dirty = std::process::Command::new("git")
         .args(&["diff", "--quiet"])
         .status()?
@@ -254,14 +253,14 @@ pub fn local_research_workspace_git_hash() -> Result<String, failure::Error> {
 }
 
 /// Get the path of the user's home directory.
-pub fn get_user_home_dir(ushell: &SshShell) -> Result<String, failure::Error> {
+pub fn get_user_home_dir(ushell: &SshShell) -> Result<String, anyhow::Error> {
     let user_home = ushell
         .run(cmd!("echo $HOME").use_bash())?
         .stdout
         .trim()
         .to_owned();
     if user_home.is_empty() {
-        Err(failure::format_err!("$HOME is empty"))
+        Err(anyhow::format_err!("$HOME is empty"))
     } else {
         Ok(user_home)
     }
@@ -276,7 +275,7 @@ pub fn set_remote_research_setting<V: Serialize>(
     ushell: &SshShell,
     setting: &str,
     value: V,
-) -> Result<(), failure::Error> {
+) -> Result<(), anyhow::Error> {
     // Make sure the file exists
     ushell.run(cmd!("touch research-settings.json"))?;
 
@@ -301,7 +300,7 @@ pub fn set_remote_research_setting<V: Serialize>(
 /// a single value.
 pub fn get_remote_research_settings(
     ushell: &SshShell,
-) -> Result<std::collections::BTreeMap<String, String>, failure::Error> {
+) -> Result<std::collections::BTreeMap<String, String>, anyhow::Error> {
     // Make sure the file exists
     ushell.run(cmd!("touch research-settings.json"))?;
 
@@ -319,7 +318,7 @@ pub fn get_remote_research_settings(
 pub fn get_remote_research_setting<'s, 'd, V: Deserialize<'d>>(
     settings: &'s std::collections::BTreeMap<String, String>,
     setting: &str,
-) -> Result<Option<V>, failure::Error>
+) -> Result<Option<V>, anyhow::Error>
 where
     's: 'd,
 {
@@ -351,7 +350,7 @@ pub fn gen_new_vagrantdomain(
     shell: &SshShell,
     vagrant_box: &str,
     vagrant_path: &str,
-) -> Result<(), failure::Error> {
+) -> Result<(), anyhow::Error> {
     let uniq = shell.run(cmd!("date | sha256sum | head -c 10"))?;
     let uniq = uniq.stdout.trim();
 
@@ -370,7 +369,7 @@ pub fn gen_new_vagrantdomain(
 }
 
 /// Returns the number of processor cores on the machine.
-pub fn get_num_cores(shell: &SshShell) -> Result<usize, failure::Error> {
+pub fn get_num_cores(shell: &SshShell) -> Result<usize, anyhow::Error> {
     let nprocess = shell.run(cmd!("getconf _NPROCESSORS_ONLN"))?.stdout;
     let nprocess = nprocess.trim();
 
@@ -384,7 +383,7 @@ pub fn get_num_cores(shell: &SshShell) -> Result<usize, failure::Error> {
 /// Get the max CPU frequency of the remote in MHz.
 ///
 /// NOTE: this is not necessarily the current CPU freq. You need to set the scaling governor.
-pub fn get_cpu_freq(shell: &SshShell) -> Result<usize, failure::Error> {
+pub fn get_cpu_freq(shell: &SshShell) -> Result<usize, anyhow::Error> {
     let freq =
         shell.run(cmd!("lscpu | grep 'CPU max MHz' | grep -oE '[0-9]+' | head -n1").use_bash())?;
     let alt =
@@ -397,7 +396,7 @@ pub fn get_cpu_freq(shell: &SshShell) -> Result<usize, failure::Error> {
 }
 
 /// Turn off ASLR.
-pub fn disable_aslr(shell: &SshShell) -> Result<(), failure::Error> {
+pub fn disable_aslr(shell: &SshShell) -> Result<(), anyhow::Error> {
     shell.run(cmd!(
         "echo 0 | sudo tee /proc/sys/kernel/randomize_va_space"
     ))?;
@@ -405,7 +404,7 @@ pub fn disable_aslr(shell: &SshShell) -> Result<(), failure::Error> {
 }
 
 /// Turn on ASLR.
-pub fn enable_aslr(shell: &SshShell) -> Result<(), failure::Error> {
+pub fn enable_aslr(shell: &SshShell) -> Result<(), anyhow::Error> {
     shell.run(cmd!(
         "echo 2 | sudo tee /proc/sys/kernel/randomize_va_space"
     ))?;
@@ -413,7 +412,7 @@ pub fn enable_aslr(shell: &SshShell) -> Result<(), failure::Error> {
 }
 
 /// Allow any user to run `perf`.
-pub fn perf_for_all(shell: &SshShell) -> Result<(), failure::Error> {
+pub fn perf_for_all(shell: &SshShell) -> Result<(), anyhow::Error> {
     shell.run(cmd!(
         "echo -1 | sudo tee /proc/sys/kernel/perf_event_paranoid"
     ))?;
@@ -428,7 +427,7 @@ pub fn turn_on_thp(
     transparent_hugepage_khugepaged_defrag: usize,
     transparent_hugepage_khugepaged_alloc_sleep_ms: usize,
     transparent_hugepage_khugepaged_scan_sleep_ms: usize,
-) -> Result<(), failure::Error> {
+) -> Result<(), anyhow::Error> {
     shell.run(
         cmd!(
             "echo {} | sudo tee /sys/kernel/mm/transparent_hugepage/enabled",
@@ -462,7 +461,7 @@ pub fn turn_on_thp(
     Ok(())
 }
 
-pub fn set_auto_numa(shell: &SshShell, on: bool) -> Result<(), failure::Error> {
+pub fn set_auto_numa(shell: &SshShell, on: bool) -> Result<(), anyhow::Error> {
     shell.run(cmd!(
         "echo {} | sudo tee /proc/sys/kernel/numa_balancing",
         if on { 1 } else { 0 }
@@ -520,7 +519,7 @@ pub struct KernelConfig<'a> {
     pub extra_options: &'a [(&'a str, bool)],
 }
 
-pub fn get_absolute_path(shell: &SshShell, path: &str) -> Result<String, failure::Error> {
+pub fn get_absolute_path(shell: &SshShell, path: &str) -> Result<String, anyhow::Error> {
     Ok(shell.run(cmd!("pwd").cwd(path))?.stdout.trim().into())
 }
 
@@ -538,7 +537,7 @@ pub fn build_kernel(
     pkg_type: KernelPkgType,
     compiler: Option<&str>,
     cpupower: bool,
-) -> Result<(), failure::Error> {
+) -> Result<(), anyhow::Error> {
     // Check out or unpack the source code, returning its absolute path.
     let source_path = match source {
         KernelSrc::Git {
@@ -720,7 +719,7 @@ pub fn service(
     shell: &SshShell,
     service: &str,
     action: ServiceAction,
-) -> Result<(), failure::Error> {
+) -> Result<(), anyhow::Error> {
     let is_active = service_is_active(shell, service)?;
 
     match action {
@@ -755,12 +754,12 @@ pub fn service(
 }
 
 /// Returns true if the given service is running.
-pub fn service_is_active(shell: &SshShell, service: &str) -> Result<bool, failure::Error> {
+pub fn service_is_active(shell: &SshShell, service: &str) -> Result<bool, anyhow::Error> {
     Ok(shell.run(cmd!("systemctl is-active {}", service)).is_ok())
 }
 
 /// Set up passphraseless SSH to localhost.
-pub fn setup_passphraseless_local_ssh(ushell: &SshShell) -> Result<(), failure::Error> {
+pub fn setup_passphraseless_local_ssh(ushell: &SshShell) -> Result<(), anyhow::Error> {
     // First check if it already works
     if ushell
         .run(cmd!("ssh -o StrictHostKeyChecking=no localhost -- whoami"))
@@ -782,7 +781,7 @@ pub fn setup_passphraseless_local_ssh(ushell: &SshShell) -> Result<(), failure::
 
 /// Returns the device id from `/dev/disk/by-id/` of the given device. `dev_name` should _exclude_
 /// the `/dev/` (e.g. `sda`).
-pub fn get_device_id(shell: &SshShell, dev_name: &str) -> Result<String, failure::Error> {
+pub fn get_device_id(shell: &SshShell, dev_name: &str) -> Result<String, anyhow::Error> {
     let out = shell.run(
         cmd!(
             "ls -lah /dev/disk/by-id/ | \
@@ -798,7 +797,7 @@ pub fn get_device_id(shell: &SshShell, dev_name: &str) -> Result<String, failure
     let name = out.stdout.trim().to_owned();
 
     if name.is_empty() {
-        Err(failure::format_err!(
+        Err(anyhow::format_err!(
             "Unable to find device by ID: {}",
             dev_name
         ))
@@ -809,7 +808,7 @@ pub fn get_device_id(shell: &SshShell, dev_name: &str) -> Result<String, failure
 
 /// Resize the root partition and file system to take up the whole remainder of the drive,
 /// destroying an partitions that come after it.
-pub fn resize_root_partition(shell: &SshShell) -> Result<(), failure::Error> {
+pub fn resize_root_partition(shell: &SshShell) -> Result<(), anyhow::Error> {
     // Find the root partition and device name.
     let output = shell
         .run(cmd!(
@@ -900,7 +899,7 @@ pub fn resize_root_partition(shell: &SshShell) -> Result<(), failure::Error> {
 }
 
 /// Dump a bunch of kernel info for debugging.
-pub fn dump_sys_info(shell: &SshShell) -> Result<(), failure::Error> {
+pub fn dump_sys_info(shell: &SshShell) -> Result<(), anyhow::Error> {
     with_shell! { shell =>
         cmd!("uname -a"),
         cmd!("lsblk"),
@@ -912,14 +911,14 @@ pub fn dump_sys_info(shell: &SshShell) -> Result<(), failure::Error> {
 
 /// Set the kernel `printk` level that gets logged to `dmesg`. `0` is only high-priority
 /// messages. `7` is all messages.
-pub fn set_kernel_printk_level(shell: &SshShell, level: usize) -> Result<(), failure::Error> {
+pub fn set_kernel_printk_level(shell: &SshShell, level: usize) -> Result<(), anyhow::Error> {
     assert!(level <= 7);
     shell.run(cmd!("echo {} | sudo tee /proc/sys/kernel/printk", level).use_bash())?;
     Ok(())
 }
 
 /// Tell the OOM killer not to kill the given process.
-pub fn oomkiller_blacklist_by_name(shell: &SshShell, name: &str) -> Result<(), failure::Error> {
+pub fn oomkiller_blacklist_by_name(shell: &SshShell, name: &str) -> Result<(), anyhow::Error> {
     shell.run(cmd!(
         r"pgrep -f {} | while read PID; do \
             echo -1000 | sudo tee /proc/$PID/oom_score_adj;
@@ -931,7 +930,7 @@ pub fn oomkiller_blacklist_by_name(shell: &SshShell, name: &str) -> Result<(), f
 }
 
 /// Turn off soft lockup and NMI watchdogs if possible in the shell.
-pub fn turn_off_watchdogs(shell: &SshShell) -> Result<(), failure::Error> {
+pub fn turn_off_watchdogs(shell: &SshShell) -> Result<(), anyhow::Error> {
     shell.run(cmd!(
         "echo 0 | sudo tee /proc/sys/kernel/hung_task_timeout_secs"
     ))?;
@@ -947,7 +946,7 @@ pub fn gen_standard_host_output(
     out_dir: &str,
     out_file: &str,
     shell: &SshShell,
-) -> Result<(), failure::Error> {
+) -> Result<(), anyhow::Error> {
     let out_file = dir!(out_dir, out_file);
 
     // Host config
@@ -1019,7 +1018,7 @@ pub fn centos_install_bcc(shell: &SshShell) -> Result<(), spurs::SshError> {
 }
 
 /// Install jemalloc as the system directory.
-pub fn install_jemalloc(shell: &SshShell) -> Result<(), failure::Error> {
+pub fn install_jemalloc(shell: &SshShell) -> Result<(), anyhow::Error> {
     // Download jemalloc.
     let user_home = &get_user_home_dir(&shell)?;
     download_and_extract(shell, downloads::JEMALLOC, user_home, Some("jemalloc"))?;
@@ -1043,7 +1042,7 @@ pub fn install_jemalloc(shell: &SshShell) -> Result<(), failure::Error> {
 }
 
 /// Install rust in the home directory of the given shell (can be guest or host).
-pub fn install_rust(shell: &SshShell) -> Result<(), failure::Error> {
+pub fn install_rust(shell: &SshShell) -> Result<(), anyhow::Error> {
     shell.run(
         cmd!(
             "curl https://sh.rustup.rs -sSf | \
@@ -1068,7 +1067,7 @@ pub fn install_spec_2017<A>(
     iso_path: &str,
     config_path: &str,
     install_path: &str,
-) -> Result<(), failure::Error>
+) -> Result<(), anyhow::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
@@ -1076,7 +1075,7 @@ where
     let iso_fname = if let Some(iso_fname) = iso_fname.file_name().and_then(|f| f.to_str()) {
         iso_fname
     } else {
-        failure::bail!("SPEC ISO is not a file name: {}", iso_path);
+        anyhow::bail!("SPEC ISO is not a file name: {}", iso_path);
     };
 
     // Copy the ISO to the remote machine.
