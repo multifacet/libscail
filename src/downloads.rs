@@ -72,16 +72,7 @@ pub fn download(
     let name = name.unwrap_or(info.name);
 
     // Check if the file exists and then maybe download.
-    shell.run(
-        cmd!(
-            "[ -e {} ] || wget {} -O {} {}",
-            name,
-            USER_AGENT,
-            name,
-            info.url
-        )
-        .cwd(to),
-    )?;
+    shell.run(cmd!("[ -e {name} ] || wget {USER_AGENT} -O {name} {}", info.url).cwd(to))?;
 
     Ok(())
 }
@@ -98,8 +89,8 @@ pub fn download_and_extract(
     download(shell, &info, to, None)?;
 
     if let Some(name) = name {
-        shell.run(cmd!("mkdir -p {}", name).cwd(to))?;
-        shell.run(cmd!("tar -C {} --strip-components=1 -xvf {}", name, info.name).cwd(to))?;
+        shell.run(cmd!("mkdir -p {name}").cwd(to))?;
+        shell.run(cmd!("tar -C {name} --strip-components=1 -xvf {}", info.name).cwd(to))?;
     } else {
         shell.run(cmd!("tar -xvf {}", info.name).cwd(to))?;
     }
