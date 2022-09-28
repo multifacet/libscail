@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use spurs::{cmd, Execute, SshShell};
 
 /// An error type for errors that can be returned by various `libscail` functionality.
+#[derive(Debug)]
 pub enum ScailError {
     /// A local command failed to run because the process began running but terminated with an
     /// error.
@@ -85,6 +86,28 @@ impl From<std::num::ParseIntError> for ScailError {
     fn from(err: std::num::ParseIntError) -> Self {
         Self::InvalidValueError {
             msg: format!("error parsing integer: {err}"),
+        }
+    }
+}
+
+impl std::fmt::Display for ScailError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScailError::CommandError { msg, .. } | ScailError::InvalidValueError { msg } => {
+                write!(f, "{msg}")
+            }
+            ScailError::SpursError(err) => write!(f, "{err}"),
+            ScailError::IoError(err) => write!(f, "{err}"),
+        }
+    }
+}
+
+impl std::error::Error for ScailError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ScailError::CommandError { .. } | ScailError::InvalidValueError { .. } => None,
+            ScailError::SpursError(err) => Some(err.clone()),
+            ScailError::IoError(err) => Some(err.clone()),
         }
     }
 }
