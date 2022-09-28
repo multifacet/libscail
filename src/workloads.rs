@@ -2,6 +2,8 @@
 
 use std::time::Instant;
 
+use crate::ScailError;
+
 use super::{get_user_home_dir, oomkiller_blacklist_by_name};
 
 use serde::{Deserialize, Serialize};
@@ -78,7 +80,7 @@ pub enum Pintool<'s> {
 #[derive(Debug)]
 pub struct MemcachedWorkloadConfig<'s, F>
 where
-    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), ScailError>,
 {
     /// The directory in which the memcached binary is contained.
     pub memcached: &'s str,
@@ -126,9 +128,9 @@ where
 pub fn start_memcached<F>(
     shell: &SshShell,
     cfg: &MemcachedWorkloadConfig<'_, F>,
-) -> Result<Option<spurs::SshSpawnHandle>, failure::Error>
+) -> Result<Option<spurs::SshSpawnHandle>, ScailError>
 where
-    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), ScailError>,
 {
     // We need to update the system vma limit because malloc may cause it to be hit for
     // large-memory systems.
@@ -165,7 +167,10 @@ where
     ))?;
 
     // Wait for memcached to start by using `memcached-tool` until we are able to connect.
-    while let Err(..) = shell.run(cmd!("{}/scripts/memcached-tool localhost:11211", cfg.memcached)) {}
+    while let Err(..) = shell.run(cmd!(
+        "{}/scripts/memcached-tool localhost:11211",
+        cfg.memcached
+    )) {}
 
     // Don't let memcached get OOM killed.
     oomkiller_blacklist_by_name(shell, "memcached")?;
@@ -193,7 +198,7 @@ where
 #[derive(Debug)]
 pub struct MongoDBWorkloadConfig<'s, F>
 where
-    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), ScailError>,
 {
     /// The path where mongodb is located
     pub mongo_dir: &'s str,
@@ -223,9 +228,9 @@ where
 pub fn start_mongodb<F>(
     shell: &SshShell,
     cfg: &MongoDBWorkloadConfig<'_, F>,
-) -> Result<(), failure::Error>
+) -> Result<(), ScailError>
 where
-    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), ScailError>,
 {
     let mongod_dir = format!("{}/mongo/build/opt/mongo", cfg.mongo_dir);
 
@@ -318,7 +323,7 @@ pub struct RedisWorkloadConfig<'s> {
 pub fn start_redis(
     shell: &SshShell,
     cfg: &RedisWorkloadConfig<'_>,
-) -> Result<SshSpawnHandle, failure::Error> {
+) -> Result<SshSpawnHandle, ScailError> {
     // Set overcommit
     shell.run(cmd!("echo 1 | sudo tee /proc/sys/vm/overcommit_memory"))?;
 
@@ -457,7 +462,7 @@ pub enum YcsbWorkload {
 #[derive(Debug)]
 pub enum YcsbSystem<'s, F>
 where
-    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), ScailError>,
 {
     Memcached(MemcachedWorkloadConfig<'s, F>),
     Redis(RedisWorkloadConfig<'s>),
@@ -468,7 +473,7 @@ where
 /// Every setting of a YCSB workload.
 pub struct YcsbConfig<'s, F>
 where
-    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), ScailError>,
 {
     pub workload: YcsbWorkload,
 
@@ -492,7 +497,7 @@ where
 /// State associated with actually running a ycsb workload.
 pub struct YcsbSession<'a, F>
 where
-    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), ScailError>,
 {
     /// The configuration.
     cfg: YcsbConfig<'a, F>,
@@ -506,7 +511,7 @@ where
 
 impl<F> YcsbSession<'_, F>
 where
-    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), ScailError>,
 {
     pub fn new<'a>(cfg: YcsbConfig<'a, F>) -> YcsbSession<'a, F> {
         YcsbSession {
@@ -518,7 +523,7 @@ where
 
     /// Start background processes/storage systems/servers, and load the dataset into it, but do
     /// not run the actual workload yet.
-    pub fn start_and_load(&mut self, shell: &SshShell) -> Result<(), failure::Error> {
+    pub fn start_and_load(&mut self, shell: &SshShell) -> Result<(), ScailError> {
         let user_home = get_user_home_dir(&shell)?;
         let ycsb_wkld_file = format!("{}/ycsb_wkld", user_home);
         let workload_file = match self.cfg.workload {
@@ -663,7 +668,7 @@ where
     }
 
     /// Run a YCSB workload, waiting to completion. `start_and_load` must be called first.
-    pub fn run(&mut self, shell: &SshShell) -> Result<(), failure::Error> {
+    pub fn run(&mut self, shell: &SshShell) -> Result<(), ScailError> {
         let user_home = get_user_home_dir(&shell)?;
         let ycsb_wkld_file = format!("{}/ycsb_wkld", user_home);
         let workload_file = match self.cfg.workload {
@@ -729,7 +734,7 @@ pub fn run_graph500(
     cmd_prefix: &str,
     pintool: Option<Pintool<'_>>,
     mmu_overhead: Option<(&str, &[String])>,
-) -> Result<(), failure::Error> {
+) -> Result<(), ScailError> {
     let pintool = match pintool {
         Some(Pintool::MemTrace {
             pin_path,
@@ -781,7 +786,7 @@ pub fn run_graph500(
 /// Represents a single SPEC 2017 workload.
 pub enum Spec2017Workload {
     Mcf,
-    Xz {size: usize},
+    Xz { size: usize },
     Xalancbmk,
 }
 
@@ -794,11 +799,9 @@ pub fn run_spec17(
     runtime_file: &str,
     // The spec workloads default to 4 threads, so we require 4 cores.
     pin_cores: Vec<usize>,
-) -> Result<(), failure::Error> {
+) -> Result<(), ScailError> {
     let (cmd, bmk) = match workload {
-        Spec2017Workload::Mcf => {
-            (format!("./mcf_s {}", input.unwrap_or("inp.in")), "mcf_s")
-        },
+        Spec2017Workload::Mcf => (format!("./mcf_s {}", input.unwrap_or("inp.in")), "mcf_s"),
         Spec2017Workload::Xz { size } => {
             let cmd = if let Some(input) = input {
                 format!("./xz_s {}", input)
@@ -807,7 +810,7 @@ pub fn run_spec17(
                  055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c\
                  774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa\
                  5ad2c04fbc447549c2810fae 1036078272 1111795472 4"
-                 .to_string()
+                    .to_string()
             } else {
                 format!(
                     "./xz_s cpu2006docs.tar.xz {} \
@@ -819,9 +822,12 @@ pub fn run_spec17(
             };
 
             (cmd, "xz_s")
-        },
+        }
         Spec2017Workload::Xalancbmk => {
-            let cmd = format!("./xalancbmk_s -v {} xalanc.xsl > /dev/null", input.unwrap_or("input.xml"));
+            let cmd = format!(
+                "./xalancbmk_s -v {} xalanc.xsl > /dev/null",
+                input.unwrap_or("input.xml")
+            );
             (cmd, "xalancbmk_s")
         }
     };
@@ -873,8 +879,11 @@ pub fn run_canneal(
     input_file: Option<&str>,
     runtime_file: &str,
     pin_core: usize,
-) -> Result<(), failure::Error> {
-    let canneal_path = format!("{}/pkgs/kernels/canneal/inst/amd64-linux.gcc/bin/", parsec_path);
+) -> Result<(), ScailError> {
+    let canneal_path = format!(
+        "{}/pkgs/kernels/canneal/inst/amd64-linux.gcc/bin/",
+        parsec_path
+    );
     let net_path = format!("{}/pkgs/kernels/canneal/inputs/", parsec_path);
 
     // Extract the input file
