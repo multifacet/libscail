@@ -3,7 +3,7 @@
 
 use spurs::{Execute, SshShell, SshSpawnHandle};
 
-use crate::cmd;
+use crate::{cmd, ScailError};
 
 /// A context for running and joining one or more `BackgroundRun`s.
 pub struct BackgroundContext<'s> {
@@ -45,7 +45,7 @@ impl<'s> BackgroundContext<'s> {
     }
 
     /// Run the given `BackgroundRun` in the background on the remote.
-    pub fn spawn(&mut self, task: BackgroundTask<'s>) -> Result<(), failure::Error> {
+    pub fn spawn(&mut self, task: BackgroundTask<'s>) -> Result<(), ScailError> {
         self.running.push(task);
         let handles = self.running.last().as_ref().unwrap().start(self.shell)?;
         self.handles.push(handles);
@@ -53,7 +53,7 @@ impl<'s> BackgroundContext<'s> {
         Ok(())
     }
 
-    pub fn notify_and_join_all(mut self) -> Result<(), failure::Error> {
+    pub fn notify_and_join_all(mut self) -> Result<(), ScailError> {
         for j in self.running.iter() {
             j.notify(self.shell)?;
         }
@@ -67,7 +67,7 @@ impl<'s> BackgroundContext<'s> {
 }
 
 impl BackgroundTask<'_> {
-    fn start(&self, shell: &SshShell) -> Result<SshSpawnHandle, failure::Error> {
+    fn start(&self, shell: &SshShell) -> Result<SshSpawnHandle, ScailError> {
         let stop_file_path = format!("/tmp/exp-{}-stop", self.name.replace(" ", "-"));
 
         // Note: command needs to _not_ end with a `;`
@@ -97,7 +97,7 @@ impl BackgroundTask<'_> {
         Ok(handle)
     }
 
-    fn notify(&self, shell: &SshShell) -> Result<(), failure::Error> {
+    fn notify(&self, shell: &SshShell) -> Result<(), ScailError> {
         let stop_file_path = format!("/tmp/exp-{}-stop", self.name.replace(" ", "-"));
         shell.run(cmd!("touch {}", stop_file_path))?;
         Ok(())

@@ -1,6 +1,8 @@
 //! Utilities for downloading stuff.
 use spurs::{cmd, Execute, SshShell};
 
+use crate::ScailError;
+
 /// Represents a possible artifact that can be downloaded.
 #[derive(Debug, Clone)]
 pub struct Download<'s> {
@@ -51,7 +53,7 @@ pub fn download(
     info: &Download,
     to: &str,
     name: Option<&str>,
-) -> Result<(), failure::Error> {
+) -> Result<(), ScailError> {
     // Some websites reject non-browsers, so pretend to be Google Chrome.
     const USER_AGENT: &str = r#"--user-agent="Mozilla/5.0 \
                              (X11; Ubuntu; Linux x86_64; rv:92.0) \
@@ -80,7 +82,7 @@ pub fn download_and_extract(
     info: Download,
     to: &str,
     name: Option<&str>,
-) -> Result<(), failure::Error> {
+) -> Result<(), ScailError> {
     // Download, keep the original name.
     download(shell, &info, to, None)?;
 
