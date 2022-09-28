@@ -600,6 +600,21 @@ pub struct KernelConfig<'a> {
     pub extra_options: &'a [(&'a str, bool)],
 }
 
+/// Contains paths to output from building a kernel.
+pub struct KernelBuildArtifacts {
+    /// The path to the source directory that was built.
+    pub source_path: String,
+
+    /// The path to the build directory.
+    pub kbuild_path: String,
+
+    /// The path to the built kernel DEB or RPM.
+    pub pkg_path: String,
+
+    /// The path to the built kernel headers DEB or RPM.
+    pub headers_pkg_path: String,
+}
+
 pub fn get_absolute_path(shell: &SshShell, path: &str) -> Result<String, ScailError> {
     Ok(shell.run(cmd!("pwd").cwd(path))?.stdout.trim().into())
 }
@@ -610,8 +625,6 @@ pub fn get_absolute_path(shell: &SshShell, path: &str) -> Result<String, ScailEr
 /// any.
 ///
 /// `cpupower` indicates whether to build and install `cpupower` (true) or not (false).
-///
-/// Returns the path to the kernel source used to build.
 pub fn build_kernel(
     ushell: &SshShell,
     source: KernelSrc,
@@ -620,7 +633,7 @@ pub fn build_kernel(
     pkg_type: KernelPkgType,
     compiler: Option<&str>,
     cpupower: bool,
-) -> Result<String, ScailError> {
+) -> Result<KernelBuildArtifacts, ScailError> {
     // Check out or unpack the source code, returning its absolute path.
     let source_path = match source {
         KernelSrc::Git {
@@ -771,7 +784,69 @@ pub fn build_kernel(
         ushell.run(cmd!("sudo ldconfig"))?;
     }
 
-    Ok(source_path)
+    // Get the path to the built package so we can return it.
+    let (pkg_path, headers_pkg_path) = match pkg_type {
+        KernelPkgType::Deb => {
+            let pkg_path = ushell
+                .run(cmd!(
+                    "ls -Art {source_path} | \
+                grep .*\\.deb |\
+                grep -v headers | \
+                grep -v libc | \
+                grep -v dbg | \
+                tail -n 1"
+                ))?
+                .stdout
+                .trim()
+                .to_owned();
+            let headers_pkg_path = ushell
+                .run(cmd!(
+                    "ls -Art {source_path} | \
+                grep .*\\.deb | \
+                grep headers | \
+                tail -n 1"
+                ))?
+                .stdout
+                .trim()
+                .to_owned();
+            (pkg_path, headers_pkg_path)
+        }
+        KernelPkgType::Rpm => {
+            let user_home = &get_user_home_dir(ushell)?;
+            let pkg_path = ushell
+                .run(
+                    cmd!(
+                        "ls -Art {user_home}/rpmbuild/RPMS/x86_64/ |\
+                        grep -v headers |\
+                        tail -n 1",
+                    )
+                    .use_bash(),
+                )?
+                .stdout
+                .trim()
+                .to_owned();
+            let headers_pkg_path = ushell
+                .run(
+                    cmd!(
+                        "ls -Art {user_home}/rpmbuild/RPMS/x86_64/ |\
+                        grep  headers |\
+                        tail -n 1",
+                    )
+                    .use_bash(),
+                )?
+                .stdout
+                .trim()
+                .to_owned();
+            (pkg_path, headers_pkg_path)
+        }
+    };
+
+    Ok(KernelBuildArtifacts {
+        source_path,
+        kbuild_path,
+        pkg_path,
+        headers_pkg_path,
+    })
 }
 
 /// Something that may be done to a service.
