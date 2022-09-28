@@ -54,6 +54,10 @@ pub const JEMALLOC: Download = Download {
     name: "5.2.1.tar.gz",
     version: "5.2.1",
 };
+pub const MPT3SAS: Download = Download {
+    url: "https://www.emulab.net/downloads/mpt3sas-22.00.02.00-src.tar.gz",
+    name: "mpt3sas-22.00.02.00-src.tar.gz",
+    version: "22.00.02.00",
 };
 
 /// Use `shell` to download the artifact to the directory `to` only if the tarball doesn't already
