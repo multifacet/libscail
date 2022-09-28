@@ -10,39 +10,50 @@ pub struct Download<'s> {
     pub url: &'s str,
     /// The name of the downloaded artifact.
     pub name: &'s str,
+    /// The version string of the artifact.
+    pub version: &'s str,
 }
 
 pub const VAGRANT: Download = Download {
     url: "https://releases.hashicorp.com/vagrant/2.2.14/vagrant_2.2.14_x86_64.rpm",
     name: "vagrant_2.2.14_x86_64.rpm",
+    version: "2.2.14",
 };
 pub const QEMU: Download = Download {
     url: "https://download.qemu.org/qemu-4.0.0.tar.xz",
     name: "qemu-4.0.0.tar.xz",
+    version: "4.0.0",
 };
 pub const MAVEN: Download = Download {
     url: "https://downloads.apache.org/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz",
     name: "apache-maven-3.6.3-bin.tar.gz",
+    version: "3.6.3",
 };
 pub const PIN: Download = Download {
     url: "https://software.intel.com/sites/landingpage/pintool/downloads/pin-3.11-97998-g7ecce2dac-gcc-linux.tar.gz",
     name: "pin-3.11-97998-g7ecce2dac-gcc-linux.tar.gz",
+    version: "3.11-97998-g7ecce2dac",
 };
 pub const KYOTO_CABINET_CORE: Download = Download {
     url: "https://dbmx.net/kyotocabinet/pkg/kyotocabinet-1.2.77.tar.gz",
     name: "kyotocabinet-1.2.77.tar.gz",
+    version: "1.2.77",
 };
 pub const KYOTO_CABINET_JAVA: Download = Download {
     url: "https://dbmx.net/kyotocabinet/javapkg/kyotocabinet-java-1.24.tar.gz",
     name: "kyotocabinet-java-1.24.tar.gz",
+    version: "1.24",
 };
 pub const PARSEC: Download = Download {
     url: "https://parsec.cs.princeton.edu/download/3.0/parsec-3.0.tar.gz",
     name: "parsec-3.0.tar.gz",
+    version: "3.0",
 };
 pub const JEMALLOC: Download = Download {
     url: "https://github.com/jemalloc/jemalloc/archive/refs/tags/5.2.1.tar.gz",
     name: "5.2.1.tar.gz",
+    version: "5.2.1",
+};
 };
 
 /// Use `shell` to download the artifact to the directory `to` only if the tarball doesn't already
