@@ -610,6 +610,8 @@ pub fn get_absolute_path(shell: &SshShell, path: &str) -> Result<String, ScailEr
 /// any.
 ///
 /// `cpupower` indicates whether to build and install `cpupower` (true) or not (false).
+///
+/// Returns the path to the kernel source used to build.
 pub fn build_kernel(
     ushell: &SshShell,
     source: KernelSrc,
@@ -618,7 +620,7 @@ pub fn build_kernel(
     pkg_type: KernelPkgType,
     compiler: Option<&str>,
     cpupower: bool,
-) -> Result<(), ScailError> {
+) -> Result<String, ScailError> {
     // Check out or unpack the source code, returning its absolute path.
     let source_path = match source {
         KernelSrc::Git {
@@ -772,13 +774,13 @@ pub fn build_kernel(
     if cpupower {
         ushell.run(
             cmd!("make -j {} {} && sudo make install", nprocess, compiler)
-                .cwd(&dir!(source_path, "tools/power/cpupower/")),
+                .cwd(&dir!(&source_path, "tools/power/cpupower/")),
         )?;
         // Make sure we reload the ld cache, so that new cpupower library is used.
         ushell.run(cmd!("sudo ldconfig"))?;
     }
 
-    Ok(())
+    Ok(source_path)
 }
 
 /// Something that may be done to a service.
