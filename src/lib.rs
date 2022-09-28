@@ -628,7 +628,7 @@ pub fn build_kernel(
             commitish,
         } => {
             ushell.run(cmd!("git fetch origin").cwd(&repo_path))?;
-            ushell.run(cmd!("git checkout {}", commitish).cwd(&repo_path))?;
+            ushell.run(cmd!("git checkout {commitish}").cwd(&repo_path))?;
 
             // If the git HEAD is detached, we should not attempt to `git pull` the latest changes,
             // as that doesn't make any sense.
@@ -637,14 +637,14 @@ pub fn build_kernel(
                 .is_err();
 
             if !is_detached {
-                ushell.run(cmd!("git reset --hard origin/{}", commitish).cwd(&repo_path))?;
+                ushell.run(cmd!("git reset --hard origin/{commitish}").cwd(&repo_path))?;
             }
 
             get_absolute_path(ushell, &repo_path)?
         }
 
         KernelSrc::Tar { tarball_path } => {
-            ushell.run(cmd!("tar xvf {}", tarball_path))?;
+            ushell.run(cmd!("tar xvf {tarball_path}"))?;
 
             get_absolute_path(
                 ushell,
@@ -658,21 +658,25 @@ pub fn build_kernel(
 
     // Compiler path, if any.
     let compiler = if let Some(compiler) = compiler {
-        format!("CC={}", compiler)
+        format!("CC={compiler}")
     } else {
         "CC=/usr/bin/gcc".into()
     };
 
     // kbuild path.
-    let kbuild_path = &format!("{}/kbuild", source_path);
+    let kbuild_path = format!("{source_path}/kbuild");
 
-    ushell.run(cmd!("mkdir -p {}", kbuild_path))?;
+    ushell.run(cmd!("mkdir -p {kbuild_path}"))?;
 
     // save old config if there is one.
-    ushell.run(cmd!("cp .config config.bak").cwd(kbuild_path).allow_error())?;
+    ushell.run(
+        cmd!("cp .config config.bak")
+            .cwd(&kbuild_path)
+            .allow_error(),
+    )?;
 
     // configure the new kernel we are about to build.
-    ushell.run(cmd!("make O={} defconfig", kbuild_path).cwd(&source_path))?;
+    ushell.run(cmd!("make O={kbuild_path} defconfig").cwd(&source_path))?;
 
     match config.base_config {
         // Nothing else to do
@@ -683,13 +687,13 @@ pub fn build_kernel(
                 .run(cmd!("ls -1 /boot/config-* | head -n1").use_bash())?
                 .stdout;
             let config = config.trim();
-            ushell.run(cmd!("cp {} {}/.config", config, kbuild_path))?;
-            ushell.run(cmd!("yes '' | make oldconfig").use_bash().cwd(kbuild_path))?;
+            ushell.run(cmd!("cp {config} {kbuild_path}/.config"))?;
+            ushell.run(cmd!("yes '' | make oldconfig").use_bash().cwd(&kbuild_path))?;
         }
 
         KernelBaseConfigSource::Path(template_path) => {
-            ushell.run(cmd!("cp {} {}/.config", template_path, kbuild_path))?;
-            ushell.run(cmd!("yes '' | make oldconfig").use_bash().cwd(kbuild_path))?;
+            ushell.run(cmd!("cp {template_path} {kbuild_path}/.config"))?;
+            ushell.run(cmd!("yes '' | make oldconfig").use_bash().cwd(&kbuild_path))?;
         }
     }
 
@@ -697,24 +701,17 @@ pub fn build_kernel(
         cmd!(
             r#"sed -i 's/CONFIG_SYSTEM_TRUSTED_KEYS=".*"/CONFIG_SYSTEM_TRUSTED_KEYS=""/' .config"#
         )
-        .cwd(kbuild_path),
+        .cwd(&kbuild_path),
     )?;
-    ushell.run(cmd!(r#"sed -i 's/CONFIG_SYSTEM_REVOCATION_KEYS=".*"/CONFIG_SYSTEM_REVOCATION_KEYS=""/' .config"#).cwd(kbuild_path))?;
+    ushell.run(cmd!(r#"sed -i 's/CONFIG_SYSTEM_REVOCATION_KEYS=".*"/CONFIG_SYSTEM_REVOCATION_KEYS=""/' .config"#).cwd(&kbuild_path))?;
     for (opt, set) in config.extra_options.iter() {
         if *set {
             ushell.run(cmd!(
-                "sed -i 's/# {} is not set/{}=y/' {}/.config",
-                opt,
-                opt,
-                kbuild_path
+                "sed -i 's/# {opt} is not set/{opt}=y/' {kbuild_path}/.config",
             ))?;
         } else {
             ushell.run(cmd!(
-                "sed -i '/{}=/s/{}=.*$/# {} is not set/' {}/.config",
-                opt,
-                opt,
-                opt,
-                kbuild_path
+                "sed -i '/{opt}=/s/{opt}=.*$/# {opt} is not set/' {kbuild_path}/.config",
             ))?;
         }
     }
@@ -739,41 +736,35 @@ pub fn build_kernel(
     // Sometimes there is an error the first time. If so, retrying usually works.
     let res = ushell.run(
         cmd!(
-            "yes '' | make -j {} {} {} {}",
-            nprocess,
-            compiler,
-            make_target,
+            "yes '' | make -j {nprocess} {compiler} {make_target} {}",
             if let Some(kernel_local_version) = kernel_local_version {
                 let kernel_local_version = kernel_local_version.replace("/", "-");
-                format!("LOCALVERSION=-{}", kernel_local_version)
+                format!("LOCALVERSION=-{kernel_local_version}")
             } else {
                 "".into()
             }
         )
-        .cwd(kbuild_path),
+        .cwd(&kbuild_path),
     );
     if let Err(..) = res {
         ushell.run(
             cmd!(
-                "make -j {} {} {} {}",
-                nprocess,
-                compiler,
-                make_target,
+                "make -j {nprocess} {compiler} {make_target} {}",
                 if let Some(kernel_local_version) = kernel_local_version {
                     let kernel_local_version = kernel_local_version.replace("/", "-");
-                    format!("LOCALVERSION=-{}", kernel_local_version)
+                    format!("LOCALVERSION=-{kernel_local_version}")
                 } else {
                     "".into()
                 }
             )
-            .cwd(kbuild_path),
+            .cwd(&kbuild_path),
         )?;
     }
 
     // Build and install `cpupower` and `libcpupower`, if needed.
     if cpupower {
         ushell.run(
-            cmd!("make -j {} {} && sudo make install", nprocess, compiler)
+            cmd!("make -j {nprocess} {compiler} && sudo make install")
                 .cwd(&dir!(&source_path, "tools/power/cpupower/")),
         )?;
         // Make sure we reload the ld cache, so that new cpupower library is used.
