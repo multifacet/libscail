@@ -789,7 +789,7 @@ pub fn build_kernel(
         KernelPkgType::Deb => {
             let pkg_path = ushell
                 .run(cmd!(
-                    "ls -Art {source_path} | \
+                    "ls -dArt {source_path} | \
                 grep .*\\.deb |\
                 grep -v headers | \
                 grep -v libc | \
@@ -801,7 +801,7 @@ pub fn build_kernel(
                 .to_owned();
             let headers_pkg_path = ushell
                 .run(cmd!(
-                    "ls -Art {source_path} | \
+                    "ls -dArt {source_path} | \
                 grep .*\\.deb | \
                 grep headers | \
                 tail -n 1"
