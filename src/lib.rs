@@ -789,22 +789,22 @@ pub fn build_kernel(
         KernelPkgType::Deb => {
             let pkg_path = ushell
                 .run(cmd!(
-                    "ls -dArt {source_path} | \
-                grep .*\\.deb |\
-                grep -v headers | \
-                grep -v libc | \
-                grep -v dbg | \
-                tail -n 1"
+                    "ls -dArt {source_path}/* | \
+                        grep '.*\\.deb' |\
+                        grep -v headers | \
+                        grep -v libc | \
+                        grep -v dbg | \
+                        tail -n 1"
                 ))?
                 .stdout
                 .trim()
                 .to_owned();
             let headers_pkg_path = ushell
                 .run(cmd!(
-                    "ls -dArt {source_path} | \
-                grep .*\\.deb | \
-                grep headers | \
-                tail -n 1"
+                    "ls -dArt {source_path}/* | \
+                        grep '.*\\.deb' | \
+                        grep headers | \
+                        tail -n 1"
                 ))?
                 .stdout
                 .trim()
@@ -817,8 +817,8 @@ pub fn build_kernel(
                 .run(
                     cmd!(
                         "ls -Art {user_home}/rpmbuild/RPMS/x86_64/ |\
-                        grep -v headers |\
-                        tail -n 1",
+                            grep -v headers |\
+                            tail -n 1",
                     )
                     .use_bash(),
                 )?
@@ -829,8 +829,8 @@ pub fn build_kernel(
                 .run(
                     cmd!(
                         "ls -Art {user_home}/rpmbuild/RPMS/x86_64/ |\
-                        grep  headers |\
-                        tail -n 1",
+                            grep  headers |\
+                            tail -n 1",
                     )
                     .use_bash(),
                 )?
