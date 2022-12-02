@@ -920,5 +920,12 @@ pub fn run_canneal(
     let duration = Instant::now() - start;
     shell.run(cmd!("echo '{}' > {}", duration.as_millis(), runtime_file))?;
 
+    match workload {
+        CannealWorkload::Custom => {},
+        _ => {
+            shell.run(cmd!("rm *.nets").cwd(&net_path))?;
+        }
+    }
+
     Ok(())
 }
