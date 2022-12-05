@@ -898,8 +898,8 @@ pub fn run_canneal(
             _ => "error",
         };
         shell.run(cmd!("tar -xvf {}", input_file).cwd(&net_path))?;
-        shell.run(cmd!("mv *.nets input.nets").cwd(&net_path))?;
-        format!("{}/input.nets", &net_path)
+        shell.run(cmd!("mv *.nets {canneal_path}/input.nets").cwd(&net_path))?;
+        format!("{}/input.nets", &canneal_path)
     };
 
     let cmd = format!("./canneal 1 15000 2000 {} 6000", input_file);
@@ -919,13 +919,6 @@ pub fn run_canneal(
     // Output the workload runtime in ms as measure of workload performance.
     let duration = Instant::now() - start;
     shell.run(cmd!("echo '{}' > {}", duration.as_millis(), runtime_file))?;
-
-    match workload {
-        CannealWorkload::Custom => {},
-        _ => {
-            shell.run(cmd!("rm *.nets").cwd(&net_path))?;
-        }
-    }
 
     Ok(())
 }
