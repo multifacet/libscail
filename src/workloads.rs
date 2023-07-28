@@ -398,12 +398,225 @@ impl TasksetCtx {
         let (nextsock, nextcore, nextthread, _, _) = all_cpuids.first().unwrap();
         self.next = (*nextsock, *nextcore, *nextthread);
     }
+}
 
-    /// Get the next core (wrapping around to 0 if all cores have been assigned).
-    pub fn next(&mut self) -> usize {
-        let c = self.next % self.ncores;
-        self.next += 1;
-        c
+#[cfg(test)]
+mod taskset_ctx_tests {
+    use super::*;
+
+    #[test]
+    fn test_simple() {
+        let mut tctx = TasksetCtxBuilder::simple(10).build();
+        assert_eq!(tctx.next(), Ok(0));
+        assert_eq!(tctx.next(), Ok(1));
+        assert_eq!(tctx.next(), Ok(2));
+        assert_eq!(tctx.next(), Ok(3));
+        assert_eq!(tctx.next(), Ok(4));
+        assert_eq!(tctx.next(), Ok(5));
+        assert_eq!(tctx.next(), Ok(6));
+        assert_eq!(tctx.next(), Ok(7));
+        assert_eq!(tctx.next(), Ok(8));
+        assert_eq!(tctx.next(), Ok(9));
+        assert_eq!(tctx.next(), Err(0));
+        assert_eq!(tctx.next(), Err(1));
+        assert_eq!(tctx.next(), Err(2));
+        assert_eq!(tctx.next(), Err(3));
+        assert_eq!(tctx.next(), Err(4));
+        assert_eq!(tctx.next(), Err(5));
+        assert_eq!(tctx.next(), Err(6));
+        assert_eq!(tctx.next(), Err(7));
+        assert_eq!(tctx.next(), Err(8));
+        assert_eq!(tctx.next(), Err(9));
+    }
+
+    #[test]
+    fn test_simple_skip_hyperthreads() {
+        let mut tctx = TasksetCtxBuilder::simple(10)
+            .skip_hyperthreads(true)
+            .build();
+        assert_eq!(tctx.next(), Ok(1));
+        assert_eq!(tctx.next(), Ok(3));
+        assert_eq!(tctx.next(), Ok(5));
+        assert_eq!(tctx.next(), Ok(7));
+        assert_eq!(tctx.next(), Ok(9));
+        assert_eq!(tctx.next(), Err(1));
+        assert_eq!(tctx.next(), Err(3));
+        assert_eq!(tctx.next(), Err(5));
+        assert_eq!(tctx.next(), Err(7));
+        assert_eq!(tctx.next(), Err(9));
+    }
+
+    #[test]
+    fn test_sockets_sequential() {
+        let mut tctx = TasksetCtxBuilder::new()
+            .add_thread(0, 0, 0)
+            .add_thread(0, 0, 1)
+            .add_thread(0, 1, 2)
+            .add_thread(0, 1, 3)
+            .add_thread(1, 0, 4)
+            .add_thread(1, 0, 5)
+            .add_thread(1, 1, 6)
+            .add_thread(1, 1, 7)
+            .numa_interleaving(TasksetCtxInterleaving::Sequential)
+            .build();
+        assert_eq!(tctx.next(), Ok(0));
+        assert_eq!(tctx.next(), Ok(1));
+        assert_eq!(tctx.next(), Ok(2));
+        assert_eq!(tctx.next(), Ok(3));
+        assert_eq!(tctx.next(), Ok(4));
+        assert_eq!(tctx.next(), Ok(5));
+        assert_eq!(tctx.next(), Ok(6));
+        assert_eq!(tctx.next(), Ok(7));
+        // Continues to try to assign on same numa node...
+        assert_eq!(tctx.next(), Err(4));
+        assert_eq!(tctx.next(), Err(5));
+        assert_eq!(tctx.next(), Err(6));
+        assert_eq!(tctx.next(), Err(7));
+        assert_eq!(tctx.next(), Err(4));
+        assert_eq!(tctx.next(), Err(5));
+        assert_eq!(tctx.next(), Err(6));
+        assert_eq!(tctx.next(), Err(7));
+    }
+
+    #[test]
+    fn test_sockets_roundrobin() {
+        let mut tctx = TasksetCtxBuilder::new()
+            .add_thread(0, 0, 0)
+            .add_thread(0, 0, 1)
+            .add_thread(0, 1, 2)
+            .add_thread(0, 1, 3)
+            .add_thread(1, 0, 4)
+            .add_thread(1, 0, 5)
+            .add_thread(1, 1, 6)
+            .add_thread(1, 1, 7)
+            .numa_interleaving(TasksetCtxInterleaving::RoundRobin)
+            .build();
+        assert_eq!(tctx.next(), Ok(0));
+        assert_eq!(tctx.next(), Ok(4));
+        assert_eq!(tctx.next(), Ok(1));
+        assert_eq!(tctx.next(), Ok(5));
+        assert_eq!(tctx.next(), Ok(2));
+        assert_eq!(tctx.next(), Ok(6));
+        assert_eq!(tctx.next(), Ok(3));
+        assert_eq!(tctx.next(), Ok(7));
+        // Continues to try to assign on alternating numa nodes...
+        assert_eq!(tctx.next(), Err(0));
+        assert_eq!(tctx.next(), Err(4));
+        assert_eq!(tctx.next(), Err(0));
+        assert_eq!(tctx.next(), Err(4));
+        assert_eq!(tctx.next(), Err(0));
+        assert_eq!(tctx.next(), Err(4));
+        assert_eq!(tctx.next(), Err(0));
+        assert_eq!(tctx.next(), Err(4));
+    }
+
+    #[test]
+    fn test_sockets_roundrobin_skip_hyperthreads() {
+        let mut tctx = TasksetCtxBuilder::new()
+            .add_thread(0, 0, 0)
+            .add_thread(0, 0, 1)
+            .add_thread(0, 1, 2)
+            .add_thread(0, 1, 3)
+            .add_thread(1, 0, 4)
+            .add_thread(1, 0, 5)
+            .add_thread(1, 1, 6)
+            .add_thread(1, 1, 7)
+            .numa_interleaving(TasksetCtxInterleaving::RoundRobin)
+            .skip_hyperthreads(true)
+            .build();
+        assert_eq!(tctx.next(), Ok(1));
+        assert_eq!(tctx.next(), Ok(5));
+        assert_eq!(tctx.next(), Ok(3));
+        assert_eq!(tctx.next(), Ok(7));
+        // Continues to try to assign on alternating numa nodes...
+        assert_eq!(tctx.next(), Err(1));
+        assert_eq!(tctx.next(), Err(5));
+        assert_eq!(tctx.next(), Err(1));
+        assert_eq!(tctx.next(), Err(5));
+        assert_eq!(tctx.next(), Err(1));
+        assert_eq!(tctx.next(), Err(5));
+        assert_eq!(tctx.next(), Err(1));
+        assert_eq!(tctx.next(), Err(5));
+    }
+
+    #[test]
+    fn test_lscpu() {
+        const LSCPU_TEXT: &str = "# The following is the parsable format, which can be fed to other
+                                  # programs. Each different item in every column has an unique ID
+                                  # starting from zero.
+                                  # CPU,Core,Socket,Node,,L1d,L1i,L2,L3
+                                  0,0,0,0,,0,0,0,0
+                                  1,1,0,0,,1,1,1,0
+                                  2,2,0,0,,2,2,2,0
+                                  3,3,0,0,,3,3,3,0
+                                  4,4,0,0,,4,4,4,0
+                                  5,5,0,0,,5,5,5,0
+                                  6,6,0,0,,6,6,6,0
+                                  7,7,0,0,,7,7,7,0
+                                  8,8,1,1,,8,8,8,1
+                                  9,9,1,1,,9,9,9,1
+                                  10,10,1,1,,10,10,10,1
+                                  11,11,1,1,,11,11,11,1
+                                  12,12,1,1,,12,12,12,1
+                                  13,13,1,1,,13,13,13,1
+                                  14,14,1,1,,14,14,14,1
+                                  15,15,1,1,,15,15,15,1
+                                  16,0,0,0,,0,0,0,0
+                                  17,1,0,0,,1,1,1,0
+                                  18,2,0,0,,2,2,2,0
+                                  19,3,0,0,,3,3,3,0
+                                  20,4,0,0,,4,4,4,0
+                                  21,5,0,0,,5,5,5,0
+                                  22,6,0,0,,6,6,6,0
+                                  23,7,0,0,,7,7,7,0
+                                  24,8,1,1,,8,8,8,1
+                                  25,9,1,1,,9,9,9,1
+                                  26,10,1,1,,10,10,10,1
+                                  27,11,1,1,,11,11,11,1
+                                  28,12,1,1,,12,12,12,1
+                                  29,13,1,1,,13,13,13,1
+                                  30,14,1,1,,14,14,14,1
+                                  31,15,1,1,,15,15,15,1";
+        let mut tctx = TasksetCtxBuilder::from_lscpu_inner(LSCPU_TEXT)
+            .skip_hyperthreads(true)
+            .numa_interleaving(TasksetCtxInterleaving::Sequential)
+            .build();
+
+        assert_eq!(tctx.next(), Ok(16));
+        assert_eq!(tctx.next(), Ok(17));
+        assert_eq!(tctx.next(), Ok(18));
+        assert_eq!(tctx.next(), Ok(19));
+        assert_eq!(tctx.next(), Ok(20));
+        assert_eq!(tctx.next(), Ok(21));
+        assert_eq!(tctx.next(), Ok(22));
+        assert_eq!(tctx.next(), Ok(23));
+
+        assert_eq!(tctx.next(), Ok(24));
+        assert_eq!(tctx.next(), Ok(25));
+        assert_eq!(tctx.next(), Ok(26));
+        assert_eq!(tctx.next(), Ok(27));
+        assert_eq!(tctx.next(), Ok(28));
+        assert_eq!(tctx.next(), Ok(29));
+        assert_eq!(tctx.next(), Ok(30));
+        assert_eq!(tctx.next(), Ok(31));
+
+        // Continues to try to assign on same numa node...
+        assert_eq!(tctx.next(), Err(24));
+        assert_eq!(tctx.next(), Err(25));
+        assert_eq!(tctx.next(), Err(26));
+        assert_eq!(tctx.next(), Err(27));
+        assert_eq!(tctx.next(), Err(28));
+        assert_eq!(tctx.next(), Err(29));
+        assert_eq!(tctx.next(), Err(30));
+        assert_eq!(tctx.next(), Err(31));
+        assert_eq!(tctx.next(), Err(24));
+        assert_eq!(tctx.next(), Err(25));
+        assert_eq!(tctx.next(), Err(26));
+        assert_eq!(tctx.next(), Err(27));
+        assert_eq!(tctx.next(), Err(28));
+        assert_eq!(tctx.next(), Err(29));
+        assert_eq!(tctx.next(), Err(30));
+        assert_eq!(tctx.next(), Err(31));
     }
 }
 
