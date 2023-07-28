@@ -1,6 +1,6 @@
 //! Common workloads
 
-use std::time::Instant;
+use std::{cmp::Ordering, time::Instant};
 
 use crate::ScailError;
 
@@ -34,26 +34,369 @@ pub fn gen_perf_command_prefix(
     prefix
 }
 
+/// Specifies how `TasksetCtx` should assign cores across NUMA nodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TasksetCtxInterleaving {
+    /// Assign all cores on a node before moving to the next node.
+    Sequential,
+    /// Assign cores in a round-robin manner across numa nodes.
+    RoundRobin,
+}
+
+/// Creates a new `TasksetCtx` with the given parameters.
+#[derive(Debug, Clone)]
+pub struct TasksetCtxBuilder {
+    /// Stores the topology of the machine: `topology[socket][core][thread]` is a cpu id for the
+    /// hardware thread on the given socket and core.
+    topology: Vec<Vec<Vec<usize>>>,
+
+    /// Build a `TasksetCtx` that skips hyperthreads. Default: false.
+    skip_hyperthreads: bool,
+
+    /// Build a `TasksetCtx` that uses the given NUMA interleaving mode.
+    /// See `TasksetCtxInterleaving`. Default: `Sequential`.
+    numa_interleaving: TasksetCtxInterleaving,
+}
+
+impl TasksetCtxBuilder {
+    /// Create a new empty builder with no topology.
+    pub fn new() -> Self {
+        Self {
+            topology: Vec::new(),
+            skip_hyperthreads: false,
+            numa_interleaving: TasksetCtxInterleaving::Sequential,
+        }
+    }
+
+    fn from_lscpu_inner(lscpu_output: &str) -> Self {
+        let mut builder = TasksetCtxBuilder::new();
+        for line in lscpu_output.lines() {
+            if line.contains('#') {
+                continue;
+            }
+            let mut split = line.trim().split(',');
+            let thread = split
+                .next()
+                .unwrap()
+                .parse::<usize>()
+                .expect("Expected integer");
+            let core = split
+                .next()
+                .unwrap()
+                .parse::<usize>()
+                .expect("Expected integer");
+            let socket = split
+                .next()
+                .unwrap()
+                .parse::<usize>()
+                .expect("Expected integer");
+
+            builder = builder.add_thread(socket, core, thread);
+        }
+
+        builder
+    }
+
+    /// Use the output of `lscpu -p` to determine the topology of the system.
+    pub fn from_lscpu(shell: &SshShell) -> Result<Self, SshError> {
+        // Run lscpu and process the output.
+        let lscpu_output = shell.run(cmd!("lscpu -p"))?.stdout;
+        Ok(Self::from_lscpu_inner(&lscpu_output))
+    }
+
+    /// Build a simple `TasksetCtx` with `ncores` cores, assuming all are on the same socket and
+    /// every other core is a hyperthread.
+    ///
+    /// This was the old behavior of `TasksetCtx`, so this constructor allows for compatibility.
+    pub fn simple(ncores: usize) -> Self {
+        assert!(ncores > 0);
+        let mut builder = TasksetCtxBuilder::new();
+        for i in 0..ncores {
+            builder = builder.add_thread(0, i / 2, i);
+        }
+        builder
+    }
+
+    /// Add a hardware thread on the given socket and core to the topology. If the given
+    /// socket, core, or thread do not exist, they are created, along with every socket, core, and
+    /// thread of smaller id. Note that this may leave a "ragged" topology. For example:
+    ///
+    /// ```rust,ignore
+    /// let builder = TasksetCtxBuilder::new().add_thread(2, 5, 2);
+    /// ```
+    ///
+    /// This code produces the following topology:
+    /// ```txt
+    /// Socket 0:
+    /// Socket 1:
+    /// Socket 2:
+    ///     Core 0:
+    ///     Core 1:
+    ///     Core 2:
+    ///     Core 3:
+    ///     Core 4:
+    ///     Core 5:
+    ///         Thread (cpu id) 2
+    /// ```
+    ///
+    /// It is the caller's responsibility to deal with or avoid ragged topologies like this.
+    ///
+    fn add_thread(mut self, socket_id: usize, core_id: usize, thread_id: usize) -> Self {
+        let sockets_to_create = if socket_id >= self.topology.len() {
+            socket_id - self.topology.len() + 1
+        } else {
+            0
+        };
+
+        for _ in 0..sockets_to_create {
+            self.topology.push(Vec::new());
+        }
+
+        let cores_to_create = if core_id >= self.topology[socket_id].len() {
+            core_id - self.topology[socket_id].len() + 1
+        } else {
+            0
+        };
+
+        for _ in 0..cores_to_create {
+            self.topology[socket_id].push(Vec::new());
+        }
+
+        self.topology[socket_id][core_id].push(thread_id);
+
+        self
+    }
+
+    /// If `true`, remove hyperthreads from the topology. Else, leave them in the topology.
+    pub fn skip_hyperthreads(self, skip: bool) -> Self {
+        Self {
+            skip_hyperthreads: skip,
+            ..self
+        }
+    }
+
+    /// Build a `TasksetCtx` that uses the given NUMA interleaving mode.
+    /// See `TasksetCtxInterleaving`.
+    pub fn numa_interleaving(self, mode: TasksetCtxInterleaving) -> Self {
+        Self {
+            numa_interleaving: mode,
+            ..self
+        }
+    }
+
+    /// Build the specified `TasksetCtx`. Panics if there is not at least one thread.
+    pub fn build(self) -> TasksetCtx {
+        let mut topology = Vec::new();
+
+        let mut at_least_one = false;
+
+        for socket in self.topology.into_iter() {
+            let mut new_socket = Vec::new();
+
+            for mut core in socket.into_iter() {
+                let mut new_core = Vec::new();
+
+                if self.skip_hyperthreads {
+                    if let Some(thread) = core.pop() {
+                        new_core.push((thread, TasksetCpuStatus::Unassigned));
+                        at_least_one = true;
+                    }
+                } else {
+                    for thread in core.into_iter() {
+                        new_core.push((thread, TasksetCpuStatus::Unassigned));
+                        at_least_one = true;
+                    }
+                }
+
+                new_socket.push(new_core)
+            }
+
+            topology.push(new_socket);
+        }
+
+        if !at_least_one {
+            panic!("`TasksetCtx` must have at least one hardware thead.");
+        }
+
+        TasksetCtx {
+            topology,
+            numa_interleaving: self.numa_interleaving,
+            next: (0, 0, 0),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum TasksetCpuStatus {
+    Unassigned,
+    Assigned,
+    Skipped,
+}
+
 /// Keeps track of which guest vCPUs have been assigned.
 #[derive(Debug)]
 pub struct TasksetCtx {
-    /// The total number of vCPUs.
-    ncores: usize,
+    /// The topology of the machine, as built by a `TasksetCtxBuilder`. We also keep track of which
+    /// threads/cores have been assigned.
+    topology: Vec<Vec<Vec<(usize, TasksetCpuStatus)>>>,
 
-    /// The number of assignments so far.
-    next: usize,
+    /// Build a `TasksetCtx` that uses the given NUMA interleaving mode.
+    /// See `TasksetCtxInterleaving`.
+    numa_interleaving: TasksetCtxInterleaving,
+
+    /// The next thread to be assigned -- note these are indices into `topology`, not necessarily
+    /// cpu ids!
+    next: (usize, usize, usize),
 }
 
 impl TasksetCtx {
     /// Create a new context with the given total number of cores.
     pub fn new(ncores: usize) -> Self {
-        assert!(ncores > 0);
-        TasksetCtx { ncores, next: 0 }
+        TasksetCtxBuilder::simple(ncores).build()
     }
 
     /// Skip one CPU. This is useful to avoid hyperthreading effects.
     pub fn skip(&mut self) {
-        self.next += 1;
+        let (socketidx, coreidx, threadidx) = self.next;
+        self.topology[socketidx][coreidx][threadidx].1 = TasksetCpuStatus::Skipped;
+
+        self.advance();
+    }
+
+    /// Get the next thread (cpuid) (wrapping around to 0 if all cores have been assigned).
+    ///
+    /// This was the old behavior of `next`.
+    pub fn next_unchecked(&mut self) -> usize {
+        match self.next() {
+            Ok(cpuid) | Err(cpuid) => cpuid,
+        }
+    }
+
+    /// Get the next thread (cpuid) that has not been assigned or explicitly skipped. If there is
+    /// no such cpuid, returns `Err` with the return value of `next_unchecked`.
+    pub fn next(&mut self) -> Result<usize, usize> {
+        use TasksetCpuStatus::*;
+
+        let (socketidx, coreidx, threadidx) = self.next;
+        let (cpuid, status) = self.topology[socketidx][coreidx][threadidx];
+
+        let retval = match status {
+            Unassigned => {
+                self.topology[socketidx][coreidx][threadidx].1 = Assigned;
+                Ok(cpuid)
+            }
+            Assigned | Skipped => Err(cpuid),
+        };
+
+        self.advance();
+
+        retval
+    }
+
+    /// Select the next unassigned, unskipped cpuid if there is one. Otherwise, select the next
+    /// skipped cpuid. Otherwise, select the next cpuid.
+    fn advance(&mut self) {
+        use Ordering::*;
+        use TasksetCpuStatus::*;
+        use TasksetCtxInterleaving::*;
+
+        // We construct a list of all CPUs and sort it in order of preference. Then, we take the
+        // first CPU in the list. Since we don't expec the list of CPUs to be huge, this should be
+        // fine.
+        let (current_socket, current_core, current_thread) = self.next;
+        let (current_cpuid, _) = self.topology[current_socket][current_core][current_thread];
+
+        let mut all_cpuids = self
+            .topology
+            .iter()
+            .enumerate()
+            .flat_map(move |(s, socket)| {
+                socket.iter().enumerate().flat_map(move |(c, core)| {
+                    core.iter()
+                        .enumerate()
+                        .map(move |(t, (cpuid, status))| (s, c, t, *cpuid, *status))
+                })
+            })
+            .collect::<Vec<_>>();
+
+        // Ordering::Less indicates A is preferred to B.
+        let compare =
+            |&(asock, _acore, _athrd, acpuid, astatus): &(_, _, _, usize, _),
+             &(bsock, _bcore, _bthrd, bcpuid, bstatus): &(_, _, _, usize, _)| {
+                // Consider availability of the core.
+                match (astatus, bstatus) {
+                    // If they are the same, inconclusive...
+                    (Unassigned, Unassigned) | (Assigned, Assigned) | (Skipped, Skipped) => {}
+
+                    // If one is unassigned and the other is not, the unassigned CPU gets preference.
+                    (Unassigned, _) => return Less,
+                    (_, Unassigned) => return Greater,
+
+                    (Assigned, Skipped) => return Greater,
+                    (Skipped, Assigned) => return Less,
+                }
+
+                // Consider interleaving strategy.
+                match self.numa_interleaving {
+                    // Prefer the socket self.next and those immediately after it.
+                    Sequential => {
+                        let adiff = (asock as isize) - (current_socket as isize);
+                        let bdiff = (bsock as isize) - (current_socket as isize);
+                        // A is before current socket; B is at or after current socket.
+                        if adiff < 0 && bdiff >= 0 {
+                            return Greater;
+                        } else if bdiff < 0 && adiff >= 0 {
+                            return Less;
+                        }
+                        // Both before or both after current socket, but not the same.
+                        else if adiff != bdiff {
+                            return adiff.cmp(&bdiff);
+                        }
+                    }
+
+                    // Prefer sockets other than self.next, starting with the one after next.
+                    RoundRobin => {
+                        let adiff = (asock as isize) - (current_socket as isize);
+                        let bdiff = (bsock as isize) - (current_socket as isize);
+                        // A is before current socket; B is after current socket.
+                        if adiff < 0 && bdiff > 0 {
+                            return Greater;
+                        } else if bdiff < 0 && adiff > 0 {
+                            return Less;
+                        }
+                        // If one of them is the current socket and the other is not.
+                        else if adiff == 0 && bdiff != 0 {
+                            return Greater;
+                        } else if bdiff == 0 && adiff != 0 {
+                            return Less;
+                        }
+                        // Both before or both after current socket, but not the same.
+                        else if adiff != bdiff {
+                            return adiff.cmp(&bdiff);
+                        }
+                    }
+                }
+
+                // Otherwise, simply pick the next cpuid and wrap around when needed.
+                match (acpuid.cmp(&current_cpuid), bcpuid.cmp(&current_cpuid)) {
+                    // Otherwise, make sure we don't pick the same cpuid twice.
+                    (Equal, Equal) => Equal,
+                    (Equal, _) => Greater,
+                    (_, Equal) => Less,
+
+                    // Prefer subsequent cpuids so we proceed in a round-robin manner.
+                    (Less, Greater) => Greater,
+                    (Greater, Less) => Less,
+
+                    // Both before or both after => just pick the lower cpuid.
+                    (Less, Less) | (Greater, Greater) => acpuid.cmp(&bcpuid),
+                }
+            };
+
+        all_cpuids.sort_by(compare);
+
+        let (nextsock, nextcore, nextthread, _, _) = all_cpuids.first().unwrap();
+        self.next = (*nextsock, *nextcore, *nextthread);
     }
 
     /// Get the next core (wrapping around to 0 if all cores have been assigned).
@@ -417,7 +760,7 @@ pub fn run_metis_matrix_mult(
     shell.spawn(
         cmd!(
             "taskset -c {} {} ./obj/matrix_mult2 -q -o -l {} ; echo matrix_mult2 done ;",
-            tctx.next(),
+            tctx.next_unchecked(),
             cmd_prefix.unwrap_or(""),
             dim
         )
