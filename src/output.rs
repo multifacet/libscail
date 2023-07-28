@@ -160,7 +160,7 @@ pub trait Parametrize: Serialize + Deserialize<'static> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate as runner;
+    use crate as libscail;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
     struct Test {
