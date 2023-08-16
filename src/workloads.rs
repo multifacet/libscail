@@ -652,8 +652,6 @@ where
 
     /// The core number that the memcached server is pinned to, if any.
     pub server_pin_core: Option<usize>,
-    /// The core number that the workload client is pinned to.
-    pub client_pin_core: usize,
 
     /// The size of the workload in GB.
     pub wk_size_gb: usize,
@@ -769,8 +767,6 @@ where
 
     /// The core number that the `MongoDB` server is pinned to, if any.
     pub server_pin_core: Option<usize>,
-    /// The core number that the workload client is pinned to.
-    pub client_pin_core: usize,
 
     /// A prefix for the shell command that starts the process
     pub cmd_prefix: Option<&'s str>,
@@ -855,8 +851,6 @@ pub struct RedisWorkloadConfig<'s> {
 
     /// The core number that the redis server is pinned to, if any.
     pub server_pin_core: Option<usize>,
-    /// The core number that the workload client is pinned to.
-    pub client_pin_core: usize,
 
     /// A prefix for the shell command that starts the process
     pub cmd_prefix: Option<&'s str>,
@@ -1036,12 +1030,14 @@ where
     /// A config file for the server.
     ///
     /// For memcached and redis, the following config fields are ignored:
-    /// - client_pin_core
     /// - wk_size_gb
     /// - output_file
     /// - freq
     /// - pf_time
     pub system: YcsbSystem<'s, F>,
+
+    /// The core number that the workload client is pinned to.
+    pub client_pin_core: Option<usize>,
 
     /// The path of the YCSB directory.
     pub ycsb_path: &'s str,
@@ -1090,6 +1086,12 @@ where
             YcsbWorkload::E => "workloads/workloade",
             YcsbWorkload::F => "workloads/workloadf",
             YcsbWorkload::Custom { .. } => &ycsb_wkld_file,
+        };
+
+        let taskset = if let Some(client_pin_core) = self.cfg.client_pin_core {
+            format!("taskset -c {}", client_pin_core)
+        } else {
+            "".into()
         };
 
         // If this is a custom workload, we have to build the workload file
@@ -1173,7 +1175,7 @@ where
                 self.flags.push("-p memcached.hosts=localhost:11211".into());
 
                 with_shell! { shell in &self.cfg.ycsb_path =>
-                    cmd!("./bin/ycsb load memcached -s -P {} {}", workload_file, self.flags.join(" ")),
+                    cmd!("{} ./bin/ycsb load memcached -s -P {} {}", taskset, workload_file, self.flags.join(" ")),
                     cmd!("{}/scripts/memcached-tool localhost:11211", cfg_memcached.memcached),
                 }
             }
@@ -1202,7 +1204,7 @@ where
                 self.flags.push("-p redis.uds=/tmp/redis.sock".into());
 
                 with_shell! { shell in &self.cfg.ycsb_path =>
-                    cmd!("./bin/ycsb load redis -s -P {} {}", workload_file, self.flags.join(" ")),
+                    cmd!("{} ./bin/ycsb load redis -s -P {} {}", taskset, workload_file, self.flags.join(" ")),
                     cmd!("redis-cli -s /tmp/redis.sock INFO"),
                 }
             }
@@ -1212,7 +1214,7 @@ where
 
                 // Load the database before starting the workload
                 shell.run(
-                    cmd!("./bin/ycsb load mongodb -s -P {}", ycsb_wkld_file)
+                    cmd!("{} ./bin/ycsb load mongodb -s -P {}", taskset, ycsb_wkld_file)
                         .cwd(&self.cfg.ycsb_path),
                 )?;
             }
@@ -1238,11 +1240,19 @@ where
         };
         let ycsb_result_file = self.cfg.ycsb_result_file.unwrap_or("");
 
+        let taskset = if let Some(client_pin_core) = self.cfg.client_pin_core {
+            format!("taskset -c {}", client_pin_core)
+        } else {
+            "".into()
+        };
+
+
         match &self.cfg.system {
             YcsbSystem::Memcached(_cfg_memcached) => {
                 shell.run(
                     cmd!(
-                        "./bin/ycsb run memcached -s -P {} {} | tee {}",
+                        "{} ./bin/ycsb run memcached -s -P {} {} | tee {}",
+                        taskset,
                         workload_file,
                         self.flags.join(" "),
                         ycsb_result_file
@@ -1254,7 +1264,8 @@ where
             YcsbSystem::Redis(_cfg_redis) => {
                 shell.run(
                     cmd!(
-                        "./bin/ycsb run redis -s -P {} {} | tee {}",
+                        "{} ./bin/ycsb run redis -s -P {} {} | tee {}",
+                        taskset,
                         workload_file,
                         self.flags.join(" "),
                         ycsb_result_file
@@ -1266,7 +1277,8 @@ where
             YcsbSystem::MongoDB(_cfg_mongodb) => {
                 shell.run(
                     cmd!(
-                        "./bin/ycsb run mongodb -s -P {} | tee {}",
+                        "{} ./bin/ycsb run mongodb -s -P {} | tee {}",
+                        taskset,
                         ycsb_wkld_file,
                         ycsb_result_file
                     )
