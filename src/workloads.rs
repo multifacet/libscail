@@ -1214,8 +1214,12 @@ where
 
                 // Load the database before starting the workload
                 shell.run(
-                    cmd!("{} ./bin/ycsb load mongodb -s -P {}", taskset, ycsb_wkld_file)
-                        .cwd(&self.cfg.ycsb_path),
+                    cmd!(
+                        "{} ./bin/ycsb load mongodb -s -P {}",
+                        taskset,
+                        ycsb_wkld_file
+                    )
+                    .cwd(&self.cfg.ycsb_path),
                 )?;
             }
 
@@ -1245,7 +1249,6 @@ where
         } else {
             "".into()
         };
-
 
         match &self.cfg.system {
             YcsbSystem::Memcached(_cfg_memcached) => {
