@@ -1359,6 +1359,7 @@ pub enum Spec2017Workload {
     Mcf,
     Xz { size: usize },
     Xalancbmk,
+    CactuBSSN,
 }
 
 pub fn run_spec17(
@@ -1400,6 +1401,12 @@ pub fn run_spec17(
                 input.unwrap_or("input.xml")
             );
             (cmd, "xalancbmk_s")
+        }
+        Spec2017Workload::CactuBSSN => {
+            let cmd = format!(
+                "./cactuBSSN_s spec_ref.par"
+            );
+            (cmd, "cactuBSSN_s")
         }
     };
 

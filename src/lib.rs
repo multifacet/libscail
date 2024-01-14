@@ -1256,7 +1256,21 @@ where
     )?;
     ushell.run(
         cmd!(
+            "source shrc && runcpu --config={} --fake fpspeed",
+            config_path
+        )
+        .cwd(&spec_dir),
+    )?;
+    ushell.run(
+        cmd!(
             "source shrc && runcpu --config={} --action=build intspeed",
+            config_path
+        )
+        .cwd(&spec_dir),
+    )?;
+    ushell.run(
+        cmd!(
+            "source shrc && runcpu --config={} --action=build fpspeed",
             config_path
         )
         .cwd(&spec_dir),
@@ -1276,6 +1290,8 @@ where
         "xz_s",
         "mcf_s",
         "specrand_is",
+        "cactuBSSN_s",
+        "lbm_s",
     ];
 
     for bmk in SPEC_WORKLOADS.iter() {
