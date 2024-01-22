@@ -634,6 +634,131 @@ pub enum Pintool<'s> {
 
 /// The configuration of a memcached workload.
 #[derive(Debug)]
+pub struct PostgresWorkloadConfig<'s, F>
+where
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), ScailError>,
+{
+    /// The directory in which the postgres binary is in
+    pub postgres_path: &'s str,
+    /// The path of the database directory
+    pub db_dir: &'s str,
+
+    /// If using tmpfs for Postgres's data directory, how much to use in GB
+    pub tmpfs_size: Option<usize>,
+
+    /// The user running postgres
+    pub user: &'s str,
+
+    /// The core number that the memcached server is pinned to, if any.
+    pub server_pin_core: Option<usize>,
+
+    /// Indicates that we should run the given pintool on the workload.
+    pub pintool: Option<Pintool<'s>>,
+
+    /// A prefix for the shell command that starts the process
+    pub cmd_prefix: Option<&'s str>,
+
+    /// Extra options to run postgres with
+    pub postgres_options: Option<&'s str>,
+
+    /// Indicates that we should run the workload under `perf` to capture MMU overhead stats.
+    /// The string is the path to the output.
+    pub mmu_perf: Option<(&'s str, &'s [String])>,
+
+    /// A callback executed after the memcached server starts but before the workload starts.
+    pub server_start_cb: F,
+}
+
+/// Start a `Postgres` server in daemon mode
+pub fn start_postgres<F>(
+    shell: &SshShell,
+    cfg: &PostgresWorkloadConfig<'_, F>
+) -> Result<Option<spurs::SshSpawnHandle>, ScailError>
+where
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), ScailError>,
+{
+    let taskset = if let Some(server_pin_core) = cfg.server_pin_core {
+        format!("taskset -c {} ", server_pin_core)
+    } else {
+        "".into()
+    };
+
+    let pintool = match cfg.pintool {
+        Some(Pintool::MemTrace {
+            pin_path,
+            output_path,
+        }) => format!(
+            "{}/pin -t {}/source/tools/MemTrace/obj-intel64/membuffer.so -o {} -emit -- ",
+            pin_path, pin_path, output_path
+        ),
+
+        None => "".into(),
+    };
+
+    // Create the DB directory if it doesn't exist and clear it
+    shell.run(cmd!("mkdir -p {}", cfg.db_dir))?;
+    shell.run(cmd!("sudo rm -rf {}/*", cfg.db_dir))?;
+
+    if let Some(tmpfs_size) = cfg.tmpfs_size {
+        shell.run(cmd!(
+            "sudo mount -t tmpfs -o size={}g tmpfs {}",
+            tmpfs_size,
+            cfg.db_dir
+        ))?;
+        shell.run(cmd!(
+            "sudo chown {} {}",
+            cfg.user,
+            cfg.db_dir
+        ))?;
+    }
+
+    // Now we have to setup the DB dir for postgres
+    shell.run(cmd!("{}/initdb -D {}", cfg.postgres_path, cfg.db_dir))?;
+
+    shell.spawn(cmd!(
+        "{}{}{} {}/postgres {} -D {} ",
+        pintool,
+        taskset,
+        cfg.cmd_prefix.unwrap_or(""),
+        cfg.postgres_path,
+        cfg.postgres_options.unwrap_or(""),
+        cfg.db_dir,
+    ))?;
+
+    // Wait for postgres to start by using `pg_isready` until we are able to connect.
+    while let Err(..) = shell.run(cmd!(
+        "{}/pg_isready",
+        cfg.postgres_path
+    )) {}
+
+    // Setup the DB for YCSB
+    shell.run(cmd!("{}/createdb", cfg.postgres_path))?;
+    shell.run(cmd!("{}/psql -w -c \"CREATE TABLE usertable \
+        (YCSB_KEY VARCHAR(255) PRIMARY KEY not NULL, \
+        YCSB_VALUE JSONB not NULL);\"", 
+        cfg.postgres_path))?;
+
+    // Run the callback
+    (cfg.server_start_cb)(shell)?;
+
+    // Start `perf` if needed.
+    Ok(if let Some((output_path, counters)) = &cfg.mmu_perf {
+        let handle = shell.spawn(cmd!(
+            "{}",
+            gen_perf_command_prefix(output_path, counters, "-p `pgrep postgres`")
+        ))?;
+
+        // Wait for perf to start collection.
+        shell.run(cmd!("while [ ! -e {} ] ; do sleep 1 ; done", output_path).use_bash())?;
+
+        Some(handle)
+    } else {
+        None
+    })
+}
+
+/// The configuration of a memcached workload.
+#[derive(Debug)]
 pub struct MemcachedWorkloadConfig<'s, F>
 where
     F: for<'cb> Fn(&'cb SshShell) -> Result<(), ScailError>,
@@ -1014,6 +1139,7 @@ pub enum YcsbSystem<'s, F>
 where
     F: for<'cb> Fn(&'cb SshShell) -> Result<(), ScailError>,
 {
+    Postgres(PostgresWorkloadConfig<'s, F>),
     Memcached(MemcachedWorkloadConfig<'s, F>),
     Redis(RedisWorkloadConfig<'s>),
     MongoDB(MongoDBWorkloadConfig<'s, F>),
@@ -1153,6 +1279,21 @@ where
         const RECORD_SIZE_KB: usize = 16;
 
         match &self.cfg.system {
+            YcsbSystem::Postgres(cfg_postgres) => {
+                start_postgres(&shell, cfg_postgres)?;
+
+                self.flags.push(format!("-p postgrenosql.url=jdbc:postgresql://localhost:5432/{}", cfg_postgres.user));
+                self.flags.push(format!("-p postgrenosql.user={}", cfg_postgres.user));
+                shell.run(
+                    cmd!(
+                        "{} ./bin/ycsb load postgrenosql -s -P {} {}",
+                        taskset,
+                        ycsb_wkld_file,
+                        self.flags.join(" ")
+                    )
+                    .cwd(&self.cfg.ycsb_path),
+                )?;
+            }
             YcsbSystem::Memcached(cfg_memcached) => {
                 start_memcached(shell, &cfg_memcached)?;
 
@@ -1251,6 +1392,18 @@ where
         };
 
         match &self.cfg.system {
+            YcsbSystem::Postgres(_cfg_postgres) => {
+                shell.run(
+                    cmd!(
+                        "{} ./bin/ycsb run postgrenosql -s -P {} {} | tee {}",
+                        taskset,
+                        workload_file,
+                        self.flags.join(" "),
+                        ycsb_result_file
+                    )
+                    .cwd(&self.cfg.ycsb_path),
+                )?;
+            }
             YcsbSystem::Memcached(_cfg_memcached) => {
                 shell.run(
                     cmd!(
