@@ -727,10 +727,12 @@ pub fn build_kernel(
                 "sed -i '/{opt}=/s/{opt}=.*$/# {opt} is not set/' {kbuild_path}/.config",
             ))?;
         }
-    }
 
-    // Make sure config is consistent
-    ushell.run(cmd!("yes '' | make oldconfig").cwd(&kbuild_path))?;
+        // Some options don't show up in the .config file if the conditions they depend on
+        // (e.g. certain configs enabled/disabled) are not true, so call make oldconfig
+        // after each config change to ensure the config lines exist for sed to replace.
+        ushell.run(cmd!("yes '' | make oldconfig").cwd(&kbuild_path))?;
+    }
 
     // Compile with as many processors as we have.
     //
