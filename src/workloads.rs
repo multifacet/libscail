@@ -1286,7 +1286,7 @@ where
                 self.flags.push(format!("-p postgrenosql.user={}", cfg_postgres.user));
                 shell.run(
                     cmd!(
-                        "{} ./bin/ycsb load postgrenosql -s -P {} {}",
+                        "{} python2 ./bin/ycsb load postgrenosql -s -P {} {}",
                         taskset,
                         ycsb_wkld_file,
                         self.flags.join(" ")
@@ -1316,7 +1316,7 @@ where
                 self.flags.push("-p memcached.hosts=localhost:11211".into());
 
                 with_shell! { shell in &self.cfg.ycsb_path =>
-                    cmd!("{} ./bin/ycsb load memcached -s -P {} {}", taskset, workload_file, self.flags.join(" ")),
+                    cmd!("{} python2 ./bin/ycsb load memcached -s -P {} {}", taskset, workload_file, self.flags.join(" ")),
                     cmd!("{}/scripts/memcached-tool localhost:11211", cfg_memcached.memcached),
                 }
             }
@@ -1345,7 +1345,7 @@ where
                 self.flags.push("-p redis.uds=/tmp/redis.sock".into());
 
                 with_shell! { shell in &self.cfg.ycsb_path =>
-                    cmd!("{} ./bin/ycsb load redis -s -P {} {}", taskset, workload_file, self.flags.join(" ")),
+                    cmd!("{} python2 ./bin/ycsb load redis -s -P {} {}", taskset, workload_file, self.flags.join(" ")),
                     cmd!("redis-cli -s /tmp/redis.sock INFO"),
                 }
             }
@@ -1356,7 +1356,7 @@ where
                 // Load the database before starting the workload
                 shell.run(
                     cmd!(
-                        "{} ./bin/ycsb load mongodb -s -P {}",
+                        "{} python2 ./bin/ycsb load mongodb -s -P {}",
                         taskset,
                         ycsb_wkld_file
                     )
@@ -1395,7 +1395,7 @@ where
             YcsbSystem::Postgres(_cfg_postgres) => {
                 shell.run(
                     cmd!(
-                        "{} ./bin/ycsb run postgrenosql -s -P {} {} | tee {}",
+                        "{} python2 ./bin/ycsb run postgrenosql -s -P {} {} | tee {}",
                         taskset,
                         workload_file,
                         self.flags.join(" "),
@@ -1407,7 +1407,7 @@ where
             YcsbSystem::Memcached(_cfg_memcached) => {
                 shell.run(
                     cmd!(
-                        "{} ./bin/ycsb run memcached -s -P {} {} | tee {}",
+                        "{} python2 ./bin/ycsb run memcached -s -P {} {} | tee {}",
                         taskset,
                         workload_file,
                         self.flags.join(" "),
@@ -1420,7 +1420,7 @@ where
             YcsbSystem::Redis(_cfg_redis) => {
                 shell.run(
                     cmd!(
-                        "{} ./bin/ycsb run redis -s -P {} {} | tee {}",
+                        "{} python2 ./bin/ycsb run redis -s -P {} {} | tee {}",
                         taskset,
                         workload_file,
                         self.flags.join(" "),
@@ -1433,7 +1433,7 @@ where
             YcsbSystem::MongoDB(_cfg_mongodb) => {
                 shell.run(
                     cmd!(
-                        "{} ./bin/ycsb run mongodb -s -P {} | tee {}",
+                        "{} python2 ./bin/ycsb run mongodb -s -P {} | tee {}",
                         taskset,
                         ycsb_wkld_file,
                         ycsb_result_file
