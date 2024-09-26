@@ -106,8 +106,8 @@ impl std::error::Error for ScailError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             ScailError::CommandError { .. } | ScailError::InvalidValueError { .. } => None,
-            ScailError::SpursError(err) => Some(err.clone()),
-            ScailError::IoError(err) => Some(err.clone()),
+            ScailError::SpursError(err) => Some(err),
+            ScailError::IoError(err) => Some(err),
         }
     }
 }
@@ -232,9 +232,9 @@ where
 
     let mut cmd = Command::new("rsync");
     cmd.arg("-vvzP")
-        .args(&["-e", "ssh -o StrictHostKeyChecking=yes"])
+        .args(["-e", "ssh -o StrictHostKeyChecking=yes"])
         .arg(from.as_ref().as_os_str())
-        .arg(&format!(
+        .arg(format!(
             "{}@{}:{}",
             login.username,
             login.host.to_socket_addrs()?.next().unwrap().ip(),
@@ -318,7 +318,7 @@ pub fn get_git_hash(ushell: &SshShell, name: &str) -> Result<String, ScailError>
 /// runner is run. Returns `"dirty"` if the workspace has uncommitted changes.
 pub fn local_research_workspace_git_hash() -> Result<String, ScailError> {
     let is_dirty = std::process::Command::new("git")
-        .args(&["diff", "--quiet"])
+        .args(["diff", "--quiet"])
         .status()?
         .code()
         .expect("terminated by signal")
@@ -329,7 +329,7 @@ pub fn local_research_workspace_git_hash() -> Result<String, ScailError> {
     }
 
     let output = std::process::Command::new("git")
-        .args(&["rev-parse", "HEAD"])
+        .args(["rev-parse", "HEAD"])
         .output()?;
     let output = std::str::from_utf8(&output.stdout)?;
     let output = output.trim();
@@ -761,7 +761,7 @@ pub fn build_kernel(
         )
         .cwd(&kbuild_path),
     );
-    if let Err(..) = res {
+    if res.is_err() {
         ushell.run(
             cmd!(
                 "make -j {nprocess} {compiler} {make_target} {}",
@@ -1166,7 +1166,7 @@ pub fn centos_install_bcc(shell: &SshShell) -> Result<(), spurs::SshError> {
 /// Install jemalloc as the system directory.
 pub fn install_jemalloc(shell: &SshShell) -> Result<(), ScailError> {
     // Download jemalloc.
-    let user_home = &get_user_home_dir(&shell)?;
+    let user_home = &get_user_home_dir(shell)?;
     download_and_extract(shell, downloads::JEMALLOC, user_home, Some("jemalloc"))?;
 
     // Build and install.
@@ -1227,7 +1227,7 @@ where
     };
 
     // Copy the ISO to the remote machine.
-    let user_home = &get_user_home_dir(&ushell)?;
+    let user_home = &get_user_home_dir(ushell)?;
     rsync_to_remote(login, iso_path, user_home)?;
 
     // Mount the ISO and execute the install script.
@@ -1294,6 +1294,7 @@ where
         "specrand_is",
         "cactuBSSN_s",
         "lbm_s",
+        "omnetpp_s",
     ];
 
     for bmk in SPEC_WORKLOADS.iter() {

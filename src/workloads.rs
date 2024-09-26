@@ -26,7 +26,7 @@ pub fn gen_perf_command_prefix(
     prefix.push_str(" -o ");
     prefix.push_str(output_file.as_ref());
 
-    prefix.push_str(" ");
+    prefix.push(' ');
     prefix.push_str(extra_args.as_ref());
 
     prefix.push_str(" -- ");
@@ -56,6 +56,12 @@ pub struct TasksetCtxBuilder {
     /// Build a `TasksetCtx` that uses the given NUMA interleaving mode.
     /// See `TasksetCtxInterleaving`. Default: `Sequential`.
     numa_interleaving: TasksetCtxInterleaving,
+}
+
+impl Default for TasksetCtxBuilder {
+    fn default() -> Self {
+        TasksetCtxBuilder::new()
+    }
 }
 
 impl TasksetCtxBuilder {
@@ -846,10 +852,13 @@ where
     ))?;
 
     // Wait for memcached to start by using `memcached-tool` until we are able to connect.
-    while let Err(..) = shell.run(cmd!(
-        "{}/scripts/memcached-tool localhost:11211",
-        cfg.memcached
-    )) {}
+    while shell
+        .run(cmd!(
+            "{}/scripts/memcached-tool localhost:11211",
+            cfg.memcached
+        ))
+        .is_err()
+    {}
 
     // Don't let memcached get OOM killed.
     oomkiller_blacklist_by_name(shell, "memcached")?;
@@ -951,7 +960,7 @@ where
     )?;
 
     // Wait for the server to start
-    while let Err(..) = shell.run(cmd!("nc -z localhost 27017")) {}
+    while shell.run(cmd!("nc -z localhost 27017")).is_err() {}
 
     // Run the callback.
     (cfg.server_start_cb)(shell)?;
@@ -1043,7 +1052,7 @@ pub fn start_redis(
         "{}{} {} /usr/bin/redis-server {}",
         pintool,
         taskset,
-        cfg.cmd_prefix.clone().unwrap_or("".into()),
+        cfg.cmd_prefix.unwrap_or(""),
         cfg.redis_conf
     ))?;
 
@@ -1191,7 +1200,7 @@ impl<F> YcsbSession<'_, F>
 where
     F: for<'cb> Fn(&'cb SshShell) -> Result<(), ScailError>,
 {
-    pub fn new<'a>(cfg: YcsbConfig<'a, F>) -> YcsbSession<'a, F> {
+    pub fn new(cfg: YcsbConfig<'_, F>) -> YcsbSession<'_, F> {
         YcsbSession {
             cfg,
             flags: vec![],
@@ -1202,7 +1211,7 @@ where
     /// Start background processes/storage systems/servers, and load the dataset into it, but do
     /// not run the actual workload yet.
     pub fn start_and_load(&mut self, shell: &SshShell) -> Result<(), ScailError> {
-        let user_home = get_user_home_dir(&shell)?;
+        let user_home = get_user_home_dir(shell)?;
         let ycsb_wkld_file = format!("{}/ycsb_wkld", user_home);
         let workload_file = match self.cfg.workload {
             YcsbWorkload::A => "workloads/workloada",
@@ -1295,7 +1304,7 @@ where
                 )?;
             }
             YcsbSystem::Memcached(cfg_memcached) => {
-                start_memcached(shell, &cfg_memcached)?;
+                start_memcached(shell, cfg_memcached)?;
 
                 /*
                 // This is the number of records that would consume the memory given to memcached
@@ -1323,7 +1332,7 @@ where
 
             YcsbSystem::Redis(cfg_redis) => {
                 // Need to hold onto this handle to keep the process alive.
-                let handle = start_redis(shell, &cfg_redis)?;
+                let handle = start_redis(shell, cfg_redis)?;
                 self.handles.push(handle);
 
                 /*
@@ -1351,7 +1360,7 @@ where
             }
 
             YcsbSystem::MongoDB(cfg_mongodb) => {
-                start_mongodb(&shell, cfg_mongodb)?;
+                start_mongodb(shell, cfg_mongodb)?;
 
                 // Load the database before starting the workload
                 shell.run(
@@ -1372,7 +1381,7 @@ where
 
     /// Run a YCSB workload, waiting to completion. `start_and_load` must be called first.
     pub fn run(&mut self, shell: &SshShell) -> Result<(), ScailError> {
-        let user_home = get_user_home_dir(&shell)?;
+        let user_home = get_user_home_dir(shell)?;
         let ycsb_wkld_file = format!("{}/ycsb_wkld", user_home);
         let workload_file = match self.cfg.workload {
             YcsbWorkload::A => "workloads/workloada",
@@ -1413,7 +1422,7 @@ where
                         self.flags.join(" "),
                         ycsb_result_file
                     )
-                    .cwd(&self.cfg.ycsb_path),
+                    .cwd(self.cfg.ycsb_path),
                 )?;
             }
 
@@ -1426,7 +1435,7 @@ where
                         self.flags.join(" "),
                         ycsb_result_file
                     )
-                    .cwd(&self.cfg.ycsb_path),
+                    .cwd(self.cfg.ycsb_path),
                 )?;
             }
 
@@ -1438,7 +1447,7 @@ where
                         ycsb_wkld_file,
                         ycsb_result_file
                     )
-                    .cwd(&self.cfg.ycsb_path),
+                    .cwd(self.cfg.ycsb_path),
                 )?;
             }
 
@@ -1473,7 +1482,7 @@ pub fn run_graph500(
 
     let mmu_perf = mmu_overhead
         .map(|(mmu_output, counters)| gen_perf_command_prefix(mmu_output, counters, "-D 5000"))
-        .unwrap_or_else(String::new);
+        .unwrap_or_default();
 
     // Graph500 consists of 3 phases. The first phase generates the graph. It is not considered
     // part of the benchmark, but it takes a looong time. For memory tracing, we want to fast
