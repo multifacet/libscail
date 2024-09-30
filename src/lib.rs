@@ -997,7 +997,7 @@ pub fn resize_root_partition(shell: &SshShell) -> Result<(), ScailError> {
         let start = parts.next().unwrap().trim().parse::<usize>().unwrap();
         let size = parts.next().unwrap().trim().parse::<usize>().unwrap();
 
-        old_partitions.insert(name, (start, size));
+        old_partitions.insert(name.to_string(), (start, size));
     }
 
     // Compute the list of partitions to delete and the new size of the root partition.
@@ -1012,10 +1012,14 @@ pub fn resize_root_partition(shell: &SshShell) -> Result<(), ScailError> {
             }
         })
         .collect();
-    let root_new_size: usize = old_partitions
+    let last_partition = old_partitions
         .iter()
-        .map(|(_name, (_start, size))| size)
-        .sum();
+        .max_by(|(_, (starta, sizea)), (_, (startb, sizeb))| {
+            (starta + sizea).cmp(&(startb + sizeb))
+        })
+        .unwrap();
+
+    let root_new_size = last_partition.1 .0 + last_partition.1 .1 - root_start;
 
     // Delete the partitions we want to get rid of (but not actually yet).
     for part in to_delete.into_iter() {
