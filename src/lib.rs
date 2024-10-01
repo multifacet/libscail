@@ -145,6 +145,9 @@ pub enum GitRepo<'a, 's> {
         /// The username to use when cloning the repository (e.g. `robo-mark-i-m` is the github
         /// username we use).
         username: &'s str,
+
+        /// The personal access token or password to access the private repo
+        secret: &'s str,
     },
 
     /// Use SSH. Not PAT is needed, and this works for public and private repos.
@@ -157,19 +160,13 @@ pub enum GitRepo<'a, 's> {
 impl GitRepo<'_, '_> {
     /// Given a repository and access method, form the URL string to be passed to git.
     ///
-    /// If this repository is private, then `secret` must be a Personal Access Token or password.
-    /// Otherwise, this method **panics**.
-    ///
     /// If this repository is public or SSH is used, then `secret` is ignored.
-    pub fn git_repo_access_url(&self, secret: Option<&str>) -> String {
-        match (self, secret) {
-            (GitRepo::Ssh { repo }, _) => repo.to_string(),
-            (GitRepo::HttpsPublic { repo }, _) => format!("https://{}", repo),
-            (GitRepo::HttpsPrivate { repo, username }, Some(secret)) => {
+    pub fn git_repo_access_url(&self) -> String {
+        match self {
+            GitRepo::Ssh { repo } => repo.to_string(),
+            GitRepo::HttpsPublic { repo } => format!("https://{}", repo),
+            GitRepo::HttpsPrivate { repo, username, secret } => {
                 format!("https://{}:{}@{}", username, secret, repo)
-            }
-            (GitRepo::HttpsPrivate { .. }, None) => {
-                panic!("No PAT or password provided for private repository.")
             }
         }
     }
@@ -180,7 +177,7 @@ impl GitRepo<'_, '_> {
         let repo = match self {
             GitRepo::Ssh { repo } => repo,
             GitRepo::HttpsPublic { repo } => repo,
-            GitRepo::HttpsPrivate { repo, username: _ } => repo,
+            GitRepo::HttpsPrivate { repo, username: _, secret: _ } => repo,
         };
 
         // We want the string after the last "/" in the url
@@ -270,7 +267,6 @@ pub fn clone_git_repo(
     repo: GitRepo,
     dir_name: Option<&str>,
     branch: Option<&str>,
-    secret: Option<&str>,
     submodules: &[&str],
 ) -> Result<String, ScailError> {
     let default_name = repo.git_repo_default_name();
@@ -291,7 +287,7 @@ pub fn clone_git_repo(
         ushell.run(cmd!(
             "git clone -b {} {} {}",
             branch_name,
-            repo.git_repo_access_url(secret),
+            repo.git_repo_access_url(),
             dir_name,
         ))?;
     }
