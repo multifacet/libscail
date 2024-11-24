@@ -299,6 +299,28 @@ impl TasksetCtx {
         retval
     }
 
+    /// Get the number of threads that are assignable.
+    pub fn num_threads(&self) -> usize {
+        let mut count = 0;
+
+        for s in 0..self.topology.len() {
+            count += self.num_threads_on_socket(s);
+        }
+
+        count
+    }
+
+    /// Get the number of assignable threads in a specified socket
+    pub fn num_threads_on_socket(&self, socket: usize) -> usize {
+        let mut count = 0;
+
+        for c in 0..self.topology[socket].len() {
+            count += self.topology[socket][c].len();
+        }
+
+        count
+    }
+
     /// Select the next unassigned, unskipped cpuid if there is one. Otherwise, select the next
     /// skipped cpuid. Otherwise, select the next cpuid.
     fn advance(&mut self) {
