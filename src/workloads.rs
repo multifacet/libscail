@@ -53,6 +53,10 @@ pub struct TasksetCtxBuilder {
     /// Build a `TasksetCtx` that skips hyperthreads. Default: false.
     skip_hyperthreads: bool,
 
+    /// Build a `TasksetCtx` that gives hyperthreads on the same core together. Default: false.
+    group_hyperthreads: bool,
+
+
     /// Build a `TasksetCtx` that uses the given NUMA interleaving mode.
     /// See `TasksetCtxInterleaving`. Default: `Sequential`.
     numa_interleaving: TasksetCtxInterleaving,
@@ -70,6 +74,7 @@ impl TasksetCtxBuilder {
         Self {
             topology: Vec::new(),
             skip_hyperthreads: false,
+            group_hyperthreads: false,
             numa_interleaving: TasksetCtxInterleaving::Sequential,
         }
     }
@@ -181,6 +186,15 @@ impl TasksetCtxBuilder {
         }
     }
 
+    /// If `true`, group hyperthreads together when returning CPU ids. Else, do not
+    /// consider hyperthread placement
+    pub fn group_hyperthreads(self, group: bool) -> Self {
+        Self {
+            group_hyperthreads: group,
+            ..self
+        }
+    }
+
     /// Build a `TasksetCtx` that uses the given NUMA interleaving mode.
     /// See `TasksetCtxInterleaving`.
     pub fn numa_interleaving(self, mode: TasksetCtxInterleaving) -> Self {
@@ -227,6 +241,7 @@ impl TasksetCtxBuilder {
         TasksetCtx {
             topology,
             numa_interleaving: self.numa_interleaving,
+            group_hyperthreads: self.group_hyperthreads,
             next: (0, 0, 0),
         }
     }
@@ -249,6 +264,10 @@ pub struct TasksetCtx {
     /// Build a `TasksetCtx` that uses the given NUMA interleaving mode.
     /// See `TasksetCtxInterleaving`.
     numa_interleaving: TasksetCtxInterleaving,
+
+    /// Build a `TasksetCtx` that gives hyperthreads on the same core together
+    /// See `TasksetCtxInterleaving`
+    group_hyperthreads: bool,
 
     /// The next thread to be assigned -- note these are indices into `topology`, not necessarily
     /// cpu ids!
@@ -349,8 +368,8 @@ impl TasksetCtx {
 
         // Ordering::Less indicates A is preferred to B.
         let compare =
-            |&(asock, _acore, _athrd, acpuid, astatus): &(_, _, _, usize, _),
-             &(bsock, _bcore, _bthrd, bcpuid, bstatus): &(_, _, _, usize, _)| {
+            |&(asock, acore, _athrd, acpuid, astatus): &(_, _, _, usize, _),
+             &(bsock, bcore, _bthrd, bcpuid, bstatus): &(_, _, _, usize, _)| {
                 // Consider availability of the core.
                 match (astatus, bstatus) {
                     // If they are the same, inconclusive...
@@ -402,6 +421,15 @@ impl TasksetCtx {
                         else if adiff != bdiff {
                             return adiff.cmp(&bdiff);
                         }
+                    }
+                }
+
+                // Consider whether to group hyperthreads together
+                if self.group_hyperthreads && acore != bcore {
+                    if acore == current_core {
+                        return Less;
+                    } else if bcore == current_core {
+                        return Greater;
                     }
                 }
 
