@@ -1021,6 +1021,9 @@ where
 /// Every setting of the redis workload.
 #[derive(Debug)]
 pub struct RedisWorkloadConfig<'s> {
+    /// The path where redis is located
+    pub redis_dir: &'s str,
+
     /// The path to the nullfs submodule on the remote.
     pub nullfs: Option<&'s str>,
     /// The path of the `redis.conf` file on the remote.
@@ -1099,10 +1102,11 @@ pub fn start_redis(
     };
 
     let handle = shell.spawn(cmd!(
-        "{}{} {} /usr/bin/redis-server {}",
+        "{}{} {} {}/redis-server {}",
         pintool,
         taskset,
         cfg.cmd_prefix.unwrap_or(""),
+        cfg.redis_dir,
         cfg.redis_conf
     ))?;
 
