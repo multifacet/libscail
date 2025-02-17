@@ -1433,8 +1433,8 @@ where
         Ok(())
     }
 
-    /// Run a YCSB workload, waiting to completion. `start_and_load` must be called first.
-    pub fn run(&mut self, shell: &SshShell) -> Result<(), ScailError> {
+    /// Run a YCSB workload, returning the handle. `start_and_load` must be called first.
+    pub fn run_handle(&mut self, shell: &SshShell) -> Result<SshSpawnHandle, ScailError> {
         let user_home = get_user_home_dir(shell)?;
         let ycsb_wkld_file = format!("{}/ycsb_wkld", user_home);
         let workload_file = match self.cfg.workload {
@@ -1454,9 +1454,9 @@ where
             "".into()
         };
 
-        match &self.cfg.system {
+        let handle = match &self.cfg.system {
             YcsbSystem::Postgres(_cfg_postgres) => {
-                shell.run(
+                shell.spawn(
                     cmd!(
                         "{} python2 ./bin/ycsb run postgrenosql -s -P {} {} | tee {}",
                         taskset,
@@ -1465,10 +1465,10 @@ where
                         ycsb_result_file
                     )
                     .cwd(&self.cfg.ycsb_path),
-                )?;
+                )?
             }
             YcsbSystem::Memcached(_cfg_memcached) => {
-                shell.run(
+                shell.spawn(
                     cmd!(
                         "{} python2 ./bin/ycsb run memcached -s -P {} {} | tee {}",
                         taskset,
@@ -1477,11 +1477,11 @@ where
                         ycsb_result_file
                     )
                     .cwd(self.cfg.ycsb_path),
-                )?;
+                )?
             }
 
             YcsbSystem::Redis(_cfg_redis) => {
-                shell.run(
+                shell.spawn(
                     cmd!(
                         "{} python2 ./bin/ycsb run redis -s -P {} {} | tee {}",
                         taskset,
@@ -1490,11 +1490,11 @@ where
                         ycsb_result_file
                     )
                     .cwd(self.cfg.ycsb_path),
-                )?;
+                )?
             }
 
             YcsbSystem::MongoDB(_cfg_mongodb) => {
-                shell.run(
+                shell.spawn(
                     cmd!(
                         "{} python2 ./bin/ycsb run mongodb -s -P {} | tee {}",
                         taskset,
@@ -1502,11 +1502,18 @@ where
                         ycsb_result_file
                     )
                     .cwd(self.cfg.ycsb_path),
-                )?;
+                )?
             }
 
             YcsbSystem::KyotoCabinet => todo!("KC with memtracing support"),
-        }
+        };
+
+        Ok(handle)
+    }
+
+    /// Run a YCSB workload, waiting to completion. `start_and_load` must be called first.
+    pub fn run(&mut self, shell: &SshShell) -> Result<(), ScailError> {
+        self.run_handle(shell)?.join().1?;
 
         Ok(())
     }
