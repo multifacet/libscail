@@ -1118,16 +1118,11 @@ pub fn start_redis(
         }
     }
 
-    const REDIS_SNAPSHOT_FREQ_SECS: usize = 300;
-
     // Settings
     // - maxmemory amount + evict random keys when full
-    // - save snapshots every 300 seconds if >= 1 key changed to the file /tmp/dump.rdb
     with_shell! { shell =>
         cmd!("redis-cli -s /tmp/redis.sock CONFIG SET maxmemory-policy allkeys-random"),
         cmd!("redis-cli -s /tmp/redis.sock CONFIG SET maxmemory {}mb", cfg.server_size_mb),
-
-        cmd!("redis-cli -s /tmp/redis.sock CONFIG SET save \"{} 1\"", REDIS_SNAPSHOT_FREQ_SECS),
     }
 
     // Make sure redis doesn't get oom killed.
