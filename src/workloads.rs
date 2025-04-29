@@ -1453,7 +1453,7 @@ where
             YcsbSystem::Postgres(_cfg_postgres) => {
                 shell.spawn(
                     cmd!(
-                        "{} python2 ./bin/ycsb run postgrenosql -s -P {} {} | tee {}",
+                        "{} python2 ./bin/ycsb run postgrenosql -s -P {} {} 2>&1 | tee {}",
                         taskset,
                         workload_file,
                         self.flags.join(" "),
@@ -1465,7 +1465,7 @@ where
             YcsbSystem::Memcached(_cfg_memcached) => {
                 shell.spawn(
                     cmd!(
-                        "{} python2 ./bin/ycsb run memcached -s -P {} {} | tee {}",
+                        "{} python2 ./bin/ycsb run memcached -s -P {} {} 2>&1 | tee {}",
                         taskset,
                         workload_file,
                         self.flags.join(" "),
@@ -1478,7 +1478,7 @@ where
             YcsbSystem::Redis(_cfg_redis) => {
                 shell.spawn(
                     cmd!(
-                        "{} python2 ./bin/ycsb run redis -s -P {} {} | tee {}",
+                        "{} python2 ./bin/ycsb run redis -s -P {} {} 2>&1 | tee {}",
                         taskset,
                         workload_file,
                         self.flags.join(" "),
@@ -1491,7 +1491,7 @@ where
             YcsbSystem::MongoDB(_cfg_mongodb) => {
                 shell.spawn(
                     cmd!(
-                        "{} python2 ./bin/ycsb run mongodb -s -P {} | tee {}",
+                        "{} python2 ./bin/ycsb run mongodb -s -P {} 2>&1 | tee {}",
                         taskset,
                         ycsb_wkld_file,
                         ycsb_result_file
