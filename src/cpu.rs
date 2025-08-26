@@ -2,7 +2,7 @@
 
 use spurs::{cmd, Execute, SshShell};
 
-use crate::ScailError;
+use crate::{ScailError, ScailErrorType};
 
 /// Intel (server and desktop) processors use `0x6` as the family number for `cpuid`.
 pub const INTEL_FAMILY_NUMBER: usize = 0x6;
@@ -79,16 +79,16 @@ pub fn cpu_family_model(ushell: &SshShell) -> Result<Processor, ScailError> {
             0x9E | 0x8E => KabyLakeConsumer,
 
             _ => {
-                return Err(ScailError::InvalidValueError {
+                return Err(ScailError::new(ScailErrorType::InvalidValueError {
                     msg: format!("Unknown processor: family={} model={}", family, model),
-                })
+                }))
             }
         }),
 
         (family, model) => {
-            return Err(ScailError::InvalidValueError {
+            return Err(ScailError::new(ScailErrorType::InvalidValueError {
                 msg: format!("Unknown processor: family={} model={}", family, model),
-            })
+            }))
         }
     })
 }

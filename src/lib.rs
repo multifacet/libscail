@@ -21,6 +21,7 @@ pub mod workloads;
 
 use crate::downloads::download_and_extract;
 
+use std::backtrace::Backtrace;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
@@ -31,7 +32,7 @@ use spurs::{cmd, Execute, SshShell};
 
 /// An error type for errors that can be returned by various `libscail` functionality.
 #[derive(Debug)]
-pub enum ScailError {
+pub enum ScailErrorType {
     /// A local command failed to run because the process began running but terminated with an
     /// error.
     CommandError {
@@ -54,60 +55,79 @@ pub enum ScailError {
     IoError(std::io::Error),
 }
 
+#[derive(Debug)]
+pub struct ScailError {
+    pub err_type: ScailErrorType,
+    backtrace: Backtrace,
+}
+
+impl ScailError {
+    pub fn new(err_type: ScailErrorType) -> ScailError {
+        ScailError {
+            err_type,
+            backtrace: Backtrace::capture(),
+        }
+    }
+
+    pub fn backtrace(&self) -> String {
+        self.backtrace.to_string()
+    }
+}
+
 impl From<std::io::Error> for ScailError {
     fn from(err: std::io::Error) -> Self {
-        Self::IoError(err)
+        ScailError::new(ScailErrorType::IoError(err))
     }
 }
 
 impl From<spurs::SshError> for ScailError {
     fn from(err: spurs::SshError) -> Self {
-        Self::SpursError(err)
+        ScailError::new(ScailErrorType::SpursError(err))
     }
 }
 
 impl From<std::str::Utf8Error> for ScailError {
     fn from(err: std::str::Utf8Error) -> Self {
-        Self::InvalidValueError {
+        ScailError::new(ScailErrorType::InvalidValueError {
             msg: format!("unable to convert to UTF-8: {err}"),
-        }
+        })
     }
 }
 
 impl From<serde_json::Error> for ScailError {
     fn from(err: serde_json::Error) -> Self {
-        Self::InvalidValueError {
+        ScailError::new(ScailErrorType::InvalidValueError {
             msg: format!("error while serializing or deserializing: {err}"),
-        }
+        })
     }
 }
 
 impl From<std::num::ParseIntError> for ScailError {
     fn from(err: std::num::ParseIntError) -> Self {
-        Self::InvalidValueError {
+        ScailError::new(ScailErrorType::InvalidValueError {
             msg: format!("error parsing integer: {err}"),
-        }
+        })
     }
 }
 
 impl std::fmt::Display for ScailError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ScailError::CommandError { msg, .. } | ScailError::InvalidValueError { msg } => {
+        match &self.err_type {
+            ScailErrorType::CommandError { msg, .. } | ScailErrorType::InvalidValueError { msg } => {
                 write!(f, "{msg}")
             }
-            ScailError::SpursError(err) => write!(f, "{err}"),
-            ScailError::IoError(err) => write!(f, "{err}"),
+            ScailErrorType::SpursError(err) => write!(f, "{err}"),
+            ScailErrorType::IoError(err) => write!(f, "{err}"),
         }
     }
 }
 
 impl std::error::Error for ScailError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            ScailError::CommandError { .. } | ScailError::InvalidValueError { .. } => None,
-            ScailError::SpursError(err) => Some(err),
-            ScailError::IoError(err) => Some(err),
+        match &self.err_type {
+            ScailErrorType::CommandError { .. } | ScailErrorType::InvalidValueError { .. } => None,
+            ScailErrorType::SpursError(err) => Some(err),
+            ScailErrorType::IoError(err) => Some(err),
         }
     }
 }
@@ -244,10 +264,10 @@ where
 
     // If failure, exit with an Err(..).
     if !status.success() {
-        return Err(ScailError::CommandError {
+        return Err(ScailError::new(ScailErrorType::CommandError {
             status,
             msg: format!("rsync failed. Exit code: {:?}", status.code()),
-        });
+        }));
     }
 
     Ok(())
@@ -340,9 +360,9 @@ pub fn get_user_home_dir(ushell: &SshShell) -> Result<String, ScailError> {
         .trim()
         .to_owned();
     if user_home.is_empty() {
-        Err(ScailError::InvalidValueError {
+        Err(ScailError::new(ScailErrorType::InvalidValueError {
             msg: "$HOME is empty".into(),
-        })
+        }))
     } else {
         Ok(user_home)
     }
@@ -940,9 +960,9 @@ pub fn get_device_id(shell: &SshShell, dev_name: &str) -> Result<String, ScailEr
     let name = out.stdout.trim().to_owned();
 
     if name.is_empty() {
-        Err(ScailError::InvalidValueError {
+        Err(ScailError::new(ScailErrorType::InvalidValueError {
             msg: format!("Unable to find device by ID: {}", dev_name),
-        })
+        }))
     } else {
         Ok(name)
     }
@@ -1221,9 +1241,9 @@ where
     let iso_fname = if let Some(iso_fname) = iso_fname.file_name().and_then(|f| f.to_str()) {
         iso_fname
     } else {
-        return Err(ScailError::InvalidValueError {
+        return Err(ScailError::new(ScailErrorType::InvalidValueError {
             msg: format!("SPEC ISO is not a file name: {}", iso_path),
-        });
+        }));
     };
 
     // Copy the ISO to the remote machine.
