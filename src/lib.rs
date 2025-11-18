@@ -368,6 +368,26 @@ pub fn get_user_home_dir(ushell: &SshShell) -> Result<String, ScailError> {
     }
 }
 
+/// Given a string, properly escape the string so that it can be passed as a command line argument
+/// to bash.
+///
+/// This is useful for passing commands to `bash -c` (e.g. through ssh).
+pub fn escape_for_bash(s: &str) -> String {
+    let mut new = String::with_capacity(s.len());
+
+    // Escape every non-alphanumeric character.
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric() {
+            new.push(c);
+        } else {
+            new.push('\\');
+            new.push(c);
+        }
+    }
+
+    new
+}
+
 /// There are some settings that are per-machine, rather than per-experiment (e.g. which devices to
 /// turn on as swap devices). We keep these settings in a per-machine file called
 /// `research-settings.json`, which is generated at the time of the setup.
@@ -392,7 +412,7 @@ pub fn set_remote_research_setting<V: Serialize>(
 
     ushell.run(cmd!(
         "echo {} > research-settings.json",
-        spurs_util::escape_for_bash(&new_contents)
+        escape_for_bash(&new_contents)
     ))?;
 
     Ok(())
