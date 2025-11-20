@@ -592,6 +592,8 @@ pub enum KernelPkgType {
     Deb,
     /// `binrpm-pkg`
     Rpm,
+    /// `bzImage`
+    BzImage,
 }
 
 /// Where to build the kernel from?
@@ -781,6 +783,7 @@ pub fn build_kernel(
     let make_target = match pkg_type {
         KernelPkgType::Deb => "bindeb-pkg",
         KernelPkgType::Rpm => "binrpm-pkg",
+        KernelPkgType::BzImage => "bzImage",
     };
 
     // Sometimes there is an error the first time. If so, retrying usually works.
@@ -875,6 +878,10 @@ pub fn build_kernel(
                 .trim()
                 .to_owned();
             (pkg_path, headers_pkg_path)
+        }
+        KernelPkgType::BzImage => {
+            let pkg_path = format!("{}/arch/x86/boot/bzImage", kbuild_path);
+            (pkg_path.clone(), pkg_path)
         }
     };
 
