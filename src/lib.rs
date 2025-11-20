@@ -1356,3 +1356,20 @@ where
 
     Ok(())
 }
+
+/// Determine if the specified file exists on the remote shell.
+/// Returns true if it exists, false otherwise.
+pub fn file_exists(shell: &SshShell, path: &str) -> Result<bool, ScailError> {
+    let res = shell.run(cmd!("test -e {}", path));
+    match res {
+        Ok(_) => Ok(true),
+        Err(e) => {
+            if let spurs::SshError::NonZeroExit { exit, .. } = e {
+                if exit == 1 {
+                    return Ok(false);
+                }
+            }
+            Err(ScailError::new(ScailErrorType::SpursError(e)))
+        }
+    }
+}
