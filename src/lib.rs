@@ -291,22 +291,21 @@ pub fn clone_git_repo(
 ) -> Result<String, ScailError> {
     let default_name = repo.git_repo_default_name();
     let dir_name = dir_name.unwrap_or(&default_name);
-    let branch_name = branch.unwrap_or("master");
 
     // Check if the repo is already cloned.
     if let Ok(_hash) = get_git_hash(ushell, dir_name) {
         // If so, just update it.
         with_shell! { ushell in &dir!(dir_name) =>
             cmd!("git fetch"),
-            cmd!("git checkout {}", branch_name),
+            cmd!("git checkout {}", branch.unwrap_or("")),
             cmd!("git pull"),
             cmd!("git submodule update"),
         }
     } else {
         // Clone the repo.
         ushell.run(cmd!(
-            "git clone -b {} {} {}",
-            branch_name,
+            "git clone {} {} {}",
+            branch.map(|s| format!("-b {}", s)).unwrap_or("".into()),
             repo.git_repo_access_url(),
             dir_name,
         ))?;
