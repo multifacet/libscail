@@ -52,7 +52,7 @@ fn important(data: &Data) -> TokenStream {
                                 let value = serde_json::to_string(&self.#name)
                                     .expect("unable to serialize");
 
-                                important.push((name.into(), value.into()));
+                                important.push((name.into(), value));
                             }
                         }
                     })
