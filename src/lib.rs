@@ -738,38 +738,42 @@ pub fn build_kernel(
                 .stdout;
             let config = config.trim();
             ushell.run(cmd!("cp {config} {kbuild_path}/.config"))?;
-            ushell.run(cmd!("yes '' | make oldconfig").use_bash().cwd(&kbuild_path))?;
+            ushell.run(cmd!("make olddefconfig").use_bash().cwd(&kbuild_path))?;
         }
 
         KernelBaseConfigSource::Path(template_path) => {
             ushell.run(cmd!("cp {template_path} {kbuild_path}/.config"))?;
-            ushell.run(cmd!("yes '' | make oldconfig").use_bash().cwd(&kbuild_path))?;
+            ushell.run(cmd!("make olddefconfig").use_bash().cwd(&kbuild_path))?;
         }
     }
 
     ushell.run(
         cmd!(
-            r#"sed -i 's/CONFIG_SYSTEM_TRUSTED_KEYS=".*"/CONFIG_SYSTEM_TRUSTED_KEYS=""/' .config"#
+            "../scripts/config --set-str CONFIG_SYSTEM_TRUSTED_KEYS ''"
         )
-        .cwd(&kbuild_path),
+        .cwd(&kbuild_path)
     )?;
-    ushell.run(cmd!(r#"sed -i 's/CONFIG_SYSTEM_REVOCATION_KEYS=".*"/CONFIG_SYSTEM_REVOCATION_KEYS=""/' .config"#).cwd(&kbuild_path))?;
+    ushell.run(
+        cmd!(
+            "../scripts/config --set-str CONFIG_SYSTEM_REVOCATION_KEYS ''"
+        )
+        .cwd(&kbuild_path)
+    )?;
     for (opt, set) in config.extra_options.iter() {
-        if *set {
-            ushell.run(cmd!(
-                "sed -i 's/# {opt} is not set/{opt}=y/' {kbuild_path}/.config",
-            ))?;
-        } else {
-            ushell.run(cmd!(
-                "sed -i '/{opt}=/s/{opt}=.*$/# {opt} is not set/' {kbuild_path}/.config",
-            ))?;
-        }
+        ushell.run(
+            cmd!(
+                "../scripts/config {} {}",
+                if *set { "--enable" } else { "--disable" },
+                opt
+            )
+            .cwd(&kbuild_path),
+        )?;
 
         // Some options don't show up in the .config file if the conditions they depend on
         // (e.g. certain configs enabled/disabled) are not true, so call make oldconfig
         // after each config change to ensure the config lines exist for sed to replace.
-        ushell.run(cmd!("yes '' | make oldconfig").cwd(&kbuild_path))?;
     }
+    ushell.run(cmd!("make olddefconfig").cwd(&kbuild_path))?;
 
     // Compile with as many processors as we have.
     //
