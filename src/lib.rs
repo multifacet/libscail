@@ -275,8 +275,8 @@ where
 
 /// Clone the repo and checkout the given submodules.
 ///
-/// `secret` is a GitHub personal access token or password that is needed if a private repo is
-/// being accessed via HTTPS.
+/// `reference` is an optional git reference (branch, tag, commit hash, etc) to clone.
+/// If not provided, the default branch will be cloned.
 ///
 /// If the repository is already cloned, it is updated (along with submodules).
 ///
@@ -286,7 +286,7 @@ pub fn clone_git_repo(
     ushell: &SshShell,
     repo: GitRepo,
     dir_name: Option<&str>,
-    branch: Option<&str>,
+    reference: Option<&str>,
     submodules: &[&str],
 ) -> Result<String, ScailError> {
     let default_name = repo.git_repo_default_name();
@@ -294,18 +294,31 @@ pub fn clone_git_repo(
 
     // Check if the repo is already cloned.
     if let Ok(_hash) = get_git_hash(ushell, dir_name) {
-        // If so, just update it.
-        with_shell! { ushell in &dir!(dir_name) =>
-            cmd!("git fetch"),
-            cmd!("git checkout {}", branch.unwrap_or("")),
-            cmd!("git pull"),
-            cmd!("git submodule update"),
+        // If so, just update it if it is a branch.
+        if reference.is_some() {
+            // Is the reference a branch?
+            let is_branch = ushell.run(
+                cmd!(
+                    "git show-ref --verify --quiet refs/heads/{}",
+                    reference.unwrap()
+                )
+                .cwd(dir_name)
+            )
+            .is_ok();
+            if is_branch {
+                with_shell! { ushell in &dir!(dir_name) =>
+                    cmd!("git fetch"),
+                    cmd!("git checkout {}", reference.unwrap_or("")),
+                    cmd!("git pull"),
+                    cmd!("git submodule update"),
+                }
+            }
         }
     } else {
         // Clone the repo.
         ushell.run(cmd!(
             "git clone {} {} {}",
-            branch.map(|s| format!("-b {}", s)).unwrap_or("".into()),
+            reference.map(|s| format!("-b {}", s)).unwrap_or("".into()),
             repo.git_repo_access_url(),
             dir_name,
         ))?;
