@@ -294,25 +294,30 @@ pub fn clone_git_repo(
 
     // Check if the repo is already cloned.
     if let Ok(_hash) = get_git_hash(ushell, dir_name) {
-        // If so, just update it if it is a branch.
-        if reference.is_some() {
-            // Is the reference a branch?
-            let is_branch = ushell.run(
-                cmd!(
-                    "git show-ref --verify --quiet refs/heads/{}",
-                    reference.unwrap()
-                )
-                .cwd(dir_name)
-            )
+        // If no reference is provided, use the current branch.
+        let reference = if let Some(tmp) = reference {
+            tmp.to_owned()
+        } else {
+            // This will return HEAD if in detached state, but that's fine
+            // because we will check for that later.
+            ushell
+                .run(cmd!("git rev-parse --abbrev-ref HEAD").cwd(dir_name))?
+                .stdout
+                .trim()
+                .to_owned()
+        };
+
+        ushell.run(cmd!("git fetch").cwd(dir_name))?;
+        ushell.run(cmd!("git checkout {}", reference).cwd(dir_name))?;
+
+        // Only pull if the reference is a branch. If the reference is a tag or
+        // commit hash, pulling will fail.
+        let is_branch = ushell
+            .run(cmd!("git show-ref --verify --quiet refs/heads/{}", reference).cwd(dir_name))
             .is_ok();
-            if is_branch {
-                with_shell! { ushell in &dir!(dir_name) =>
-                    cmd!("git fetch"),
-                    cmd!("git checkout {}", reference.unwrap_or("")),
-                    cmd!("git pull"),
-                    cmd!("git submodule update"),
-                }
-            }
+        if is_branch {
+            ushell.run(cmd!("git pull").cwd(dir_name))?;
+            ushell.run(cmd!("git submodule update").cwd(dir_name))?;
         }
     } else {
         // Clone the repo.
