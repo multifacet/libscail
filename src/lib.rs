@@ -667,11 +667,37 @@ pub struct KernelBuildArtifacts {
     pub pkg_path: String,
 
     /// The path to the built kernel headers DEB or RPM.
-    pub headers_pkg_path: String,
+    pub kernel_headers_pkg_path: String,
+
+    /// The path to the built userspace headers DEB or RPM.
+    pub user_headers_pkg_path: String,
 }
 
 pub fn get_absolute_path(shell: &SshShell, path: &str) -> Result<String, ScailError> {
     Ok(shell.run(cmd!("pwd").cwd(path))?.stdout.trim().into())
+}
+
+/// The newest file in `dir` whose name matches the shell glob `pattern`.
+///
+/// `pattern` is expanded inside `dir`, so it should not contain `/` and no part
+/// of `dir` takes part in the match. Returns an `InvalidValueError` naming the
+/// glob if nothing matches.
+fn dir_newest_matching(ushell: &SshShell, dir: &str, pattern: &str) -> Result<String, ScailError> {
+    // An unexpanded glob makes `ls` exit non-zero, so allow that and report the
+    // empty result ourselves; the message is much more useful than the raw
+    // command failure.
+    let out = ushell
+        .run(cmd!("ls -dAt1 {}/{} 2>/dev/null", dir, pattern).use_bash().allow_error())?
+        .stdout;
+    out.lines()
+        .next()
+        .map(|l| l.trim().to_owned())
+        .filter(|l| !l.is_empty())
+        .ok_or_else(|| {
+            ScailError::new(ScailErrorType::InvalidValueError {
+                msg: format!("no file matching {pattern} in {dir}"),
+            })
+        })
 }
 
 /// Build a Linux kernel package (RPM or DEB). This command does not install the new kernel.
@@ -752,7 +778,7 @@ pub fn build_kernel(
 
         KernelBaseConfigSource::Current => {
             let config = ushell
-                .run(cmd!("ls -1 /boot/config-* | head -n1").use_bash())?
+                .run(cmd!("ls -1 /boot/config-$(uname -r) 2>/dev/null").use_bash())?
                 .stdout;
             let config = config.trim();
             ushell.run(cmd!("cp {config} {kbuild_path}/.config"))?;
@@ -847,63 +873,60 @@ pub fn build_kernel(
     }
 
     // Get the path to the built package so we can return it.
-    let (pkg_path, headers_pkg_path) = match pkg_type {
+    let (pkg_path, kernel_headers_pkg_path, user_headers_pkg_path) = match pkg_type {
         KernelPkgType::Deb => {
-            let pkg_path = ushell
-                .run(cmd!(
-                    "ls -dArt {source_path}/* | \
-                        grep '.*\\.deb' |\
-                        grep -v headers | \
-                        grep -v libc | \
-                        grep -v dbg | \
-                        tail -n 1"
-                ))?
+            let kernel_release = ushell
+                .run(cmd!("cat {}/include/config/kernel.release", kbuild_path))?
                 .stdout
                 .trim()
                 .to_owned();
-            let headers_pkg_path = ushell
-                .run(cmd!(
-                    "ls -dArt {source_path}/* | \
-                        grep '.*\\.deb' | \
-                        grep headers | \
-                        tail -n 1"
-                ))?
-                .stdout
-                .trim()
-                .to_owned();
-            (pkg_path, headers_pkg_path)
+            let pkg_path = dir_newest_matching(
+                ushell,
+                &source_path,
+                &format!(
+                    "linux-image-{}_*.deb",
+                    kernel_release
+                )
+            )?;
+            let kernel_headers_pkg_path = dir_newest_matching(
+                ushell,
+                &source_path,
+                &format!(
+                    "linux-headers-{}_*.deb",
+                    kernel_release
+                )
+            )?;
+            let user_headers_pkg_path = dir_newest_matching(
+                ushell,
+                &source_path,
+                "linux-libc-dev_*.deb"
+            )?;
+            (pkg_path, kernel_headers_pkg_path, user_headers_pkg_path)
         }
         KernelPkgType::Rpm => {
-            let user_home = &get_user_home_dir(ushell)?;
-            let pkg_path = ushell
-                .run(
-                    cmd!(
-                        "ls -Art {user_home}/rpmbuild/RPMS/x86_64/ |\
-                            grep -v headers |\
-                            tail -n 1",
-                    )
-                    .use_bash(),
-                )?
-                .stdout
-                .trim()
-                .to_owned();
-            let headers_pkg_path = ushell
-                .run(
-                    cmd!(
-                        "ls -Art {user_home}/rpmbuild/RPMS/x86_64/ |\
-                            grep  headers |\
-                            tail -n 1",
-                    )
-                    .use_bash(),
-                )?
-                .stdout
-                .trim()
-                .to_owned();
-            (pkg_path, headers_pkg_path)
+            let rpm_dir = dir!(&kbuild_path, "rpmbuild/RPMS/x86_64");
+            let pkg_path = dir_newest_matching(
+                ushell,
+                &rpm_dir,
+                "kernel-[0-9]*.rpm"
+            )?;
+            // Equivalent to linux-headers in deb
+            let kernel_headers_pkg_path = dir_newest_matching(
+                ushell,
+                &rpm_dir,
+                "kernel-devel-*.rpm"
+            )?;
+            // Equivalent to linux-libc-dev in deb
+            let user_headers_pkg_path = dir_newest_matching(
+                ushell,
+                &rpm_dir,
+                "kernel-headers-*.rpm"
+            )?;
+            (pkg_path, kernel_headers_pkg_path, user_headers_pkg_path)
         }
         KernelPkgType::BzImage => {
             let pkg_path = format!("{}/arch/x86/boot/bzImage", kbuild_path);
-            (pkg_path.clone(), pkg_path)
+            (pkg_path.clone(), pkg_path.clone(), pkg_path)
         }
     };
 
@@ -911,7 +934,8 @@ pub fn build_kernel(
         source_path,
         kbuild_path,
         pkg_path,
-        headers_pkg_path,
+        kernel_headers_pkg_path,
+        user_headers_pkg_path,
     })
 }
 
